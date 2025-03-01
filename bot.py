@@ -2,7 +2,7 @@ import discord
 import requests
 import asyncio
 from discord.ext import commands
-from datetime import datetime, date, UTC
+from datetime import datetime, date, UTC, timedelta
 import os
 
 # ✅ Fix for time zones
@@ -42,26 +42,26 @@ def get_prayer_times(city: str, country: str):
         print(f"Error fetching prayer times: {e}")
         return None, None
 
-# ✅ Convert to local time for ReggioEmilia & Warsaw
+# ✅ Convert to local time and adjust for daylight saving time (DST)
 def convert_to_local_time(prayer_time: str, city: str):
     fmt = "%H:%M"
-    utc_now = datetime.now(UTC)  # ✅ Updated: Correct timezone-aware datetime
+    utc_now = datetime.now(UTC)  
 
-    # Convert prayer time string to UTC-based datetime
+    # Convert prayer time string to naive datetime (without timezone)
     prayer_time_utc = datetime.strptime(prayer_time, fmt).replace(
-        year=utc_now.year, month=utc_now.month, day=utc_now.day, tzinfo=UTC
+        year=utc_now.year, month=utc_now.month, day=utc_now.day
     )
 
-    # Assign correct timezone
+    # Assign correct timezone (adjusts for DST automatically)
     if city.lower() == "reggioemilia":
         tz = ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome")
     elif city.lower() == "warsaw":
         tz = ZoneInfo("Europe/Warsaw") if "ZoneInfo" in globals() else timezone("Europe/Warsaw")
     else:
-        return prayer_time_utc  # Fallback to UTC if city is unknown
+        return prayer_time_utc.replace(tzinfo=UTC)  # Fallback to UTC
 
-    # Convert to local time
-    return prayer_time_utc.astimezone(tz)
+    # Convert to local time with DST correction
+    return prayer_time_utc.replace(tzinfo=UTC).astimezone(tz)
 
 # ✅ Command to set Italy prayer times channel
 @bot.command(name="setupitaly")
@@ -83,14 +83,14 @@ async def schedule_prayer_times():
     
     while True:
         today = date.today()
-        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")  # ✅ Changed to "ReggioEmilia"
+        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")  
         fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
 
         if not fajr_italy or not fajr_poland:
             await asyncio.sleep(60)
             continue
 
-        # Convert fetched times to local timezone
+        # Convert fetched times to local timezone with proper DST handling
         fajr_time_italy = convert_to_local_time(fajr_italy, "reggioemilia")
         maghrib_time_italy = convert_to_local_time(maghrib_italy, "reggioemilia")
         fajr_time_poland = convert_to_local_time(fajr_poland, "warsaw")
