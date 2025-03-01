@@ -46,7 +46,7 @@ async def schedule_prayer_times():
     await bot.wait_until_ready()
     while True:
         today = date.today()
-        fajr_italy, maghrib_italy = get_prayer_times("Rome", "Italy")
+        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")
         fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
 
         if not fajr_italy or not fajr_poland:
