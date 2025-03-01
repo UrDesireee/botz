@@ -29,7 +29,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Change the TIMEZONE_OFFSET to -1 to correct for your actual timezone
-TIMEZONE_OFFSET = -1  
+TIMEZONE_OFFSET = 0  
 
 # Function to fetch prayer times and adjust to your timezone
 def get_prayer_times(city, country):
