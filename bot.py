@@ -2,7 +2,7 @@ import discord
 import requests
 import asyncio
 from discord.ext import commands
-from datetime import datetime, date
+from datetime import datetime, date, UTC
 import os
 
 # ✅ Fix for time zones
@@ -34,26 +34,18 @@ def get_prayer_times(city: str, country: str):
         print(f"Error fetching prayer times: {e}")
         return None, None
 
-<<<<<<< HEAD
-# ✅ Convert to local time for Rome & Warsaw
-=======
 # ✅ Convert to local time for Reggio Emilia & Warsaw
->>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
 def convert_to_local_time(prayer_time: str, city: str):
     fmt = "%H:%M"
-    utc_now = datetime.utcnow()
+    utc_now = datetime.now(UTC)  # ✅ Updated: Correct timezone-aware datetime
 
     # Convert prayer time string to UTC-based datetime
     prayer_time_utc = datetime.strptime(prayer_time, fmt).replace(
-        year=utc_now.year, month=utc_now.month, day=utc_now.day
+        year=utc_now.year, month=utc_now.month, day=utc_now.day, tzinfo=UTC
     )
 
     # Assign correct timezone
-<<<<<<< HEAD
-    if city.lower() == "rome":
-=======
-    if city.lower() == "reggio emilia":
->>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
+    if city.lower() == "reggioemilia":
         tz = ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome")
     elif city.lower() == "warsaw":
         tz = ZoneInfo("Europe/Warsaw") if "ZoneInfo" in globals() else timezone("Europe/Warsaw")
@@ -61,21 +53,21 @@ def convert_to_local_time(prayer_time: str, city: str):
         return prayer_time_utc  # Fallback to UTC if city is unknown
 
     # Convert to local time
-    return tz.localize(prayer_time_utc) if "ZoneInfo" not in globals() else prayer_time_utc.replace(tzinfo=tz)
+    return prayer_time_utc.astimezone(tz)
 
 # ✅ Command to set Italy prayer times channel
 @bot.command(name="setupitaly")
 async def setup_italy(ctx, channel_id: int):
     global channel_id_italy
     channel_id_italy = channel_id
-    await ctx.send(f"✅ Italy prayer times channel set to <#{channel_id}>")
+    await ctx.send(f"✅ Italy (Reggio Emilia) prayer times channel set to <#{channel_id}>")
 
 # ✅ Command to set Poland prayer times channel
 @bot.command(name="setuppoland")
 async def setup_poland(ctx, channel_id: int):
     global channel_id_poland
     channel_id_poland = channel_id
-    await ctx.send(f"✅ Poland prayer times channel set to <#{channel_id}>")
+    await ctx.send(f"✅ Poland (Warsaw) prayer times channel set to <#{channel_id}>")
 
 # ✅ Background task to send prayer notifications
 async def schedule_prayer_times():
@@ -83,11 +75,7 @@ async def schedule_prayer_times():
     
     while True:
         today = date.today()
-<<<<<<< HEAD
-        fajr_italy, maghrib_italy = get_prayer_times("Rome", "Italy")
-=======
-        fajr_italy, maghrib_italy = get_prayer_times("Reggio Emilia", "Italy")  # ✅ Changed to Reggio Emilia
->>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
+        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")  # ✅ Changed to Reggio Emilia
         fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
 
         if not fajr_italy or not fajr_poland:
@@ -95,13 +83,8 @@ async def schedule_prayer_times():
             continue
 
         # Convert fetched times to local timezone
-<<<<<<< HEAD
-        fajr_time_italy = convert_to_local_time(fajr_italy, "rome")
-        maghrib_time_italy = convert_to_local_time(maghrib_italy, "rome")
-=======
-        fajr_time_italy = convert_to_local_time(fajr_italy, "reggio emilia")
-        maghrib_time_italy = convert_to_local_time(maghrib_italy, "reggio emilia")
->>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
+        fajr_time_italy = convert_to_local_time(fajr_italy, "reggioemilia")
+        maghrib_time_italy = convert_to_local_time(maghrib_italy, "reggioemilia")
         fajr_time_poland = convert_to_local_time(fajr_poland, "warsaw")
         maghrib_time_poland = convert_to_local_time(maghrib_poland, "warsaw")
 
@@ -124,19 +107,19 @@ async def schedule_prayer_times():
         if event == "italy_fajr" and channel_id_italy:
             channel = bot.get_channel(channel_id_italy)
             if channel:
-                await channel.send(f"☀️ **Fajr time** has arrived! <@816786360693555251>")
+                await channel.send(f"☀️ **Fajr time** has arrived in Reggio Emilia! <@816786360693555251>")
         elif event == "italy_maghrib" and channel_id_italy:
             channel = bot.get_channel(channel_id_italy)
             if channel:
-                await channel.send(f"🌙 **Maghrib time** has arrived! <@816786360693555251>")
+                await channel.send(f"🌙 **Maghrib time** has arrived in Reggio Emilia! <@816786360693555251>")
         elif event == "poland_fajr" and channel_id_poland:
             channel = bot.get_channel(channel_id_poland)
             if channel:
-                await channel.send(f"☀️ **Fajr time** has arrived! <@1231967004894953513>")
+                await channel.send(f"☀️ **Fajr time** has arrived in Warsaw! <@1231967004894953513>")
         elif event == "poland_maghrib" and channel_id_poland:
             channel = bot.get_channel(channel_id_poland)
             if channel:
-                await channel.send(f"🌙 **Maghrib time** has arrived! <@1231967004894953513>")
+                await channel.send(f"🌙 **Maghrib time** has arrived in Warsaw! <@1231967004894953513>")
 
 # ✅ Start background task when bot is ready
 @bot.event
