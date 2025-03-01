@@ -114,4 +114,5 @@ async def on_ready():
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Bot token is missing! Set DISCORD_BOT_TOKEN as an environment variable.")
+bot.run(TOKEN)
 
