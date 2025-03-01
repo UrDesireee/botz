@@ -34,7 +34,7 @@ def get_prayer_times(city: str, country: str):
         print(f"Error fetching prayer times: {e}")
         return None, None
 
-# ✅ Convert to local time for Reggio Emilia & Warsaw
+# ✅ Convert to local time for Rome & Warsaw
 def convert_to_local_time(prayer_time: str, city: str):
     fmt = "%H:%M"
     utc_now = datetime.utcnow()
@@ -45,7 +45,7 @@ def convert_to_local_time(prayer_time: str, city: str):
     )
 
     # Assign correct timezone
-    if city.lower() == "reggio emilia":
+    if city.lower() == "rome":
         tz = ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome")
     elif city.lower() == "warsaw":
         tz = ZoneInfo("Europe/Warsaw") if "ZoneInfo" in globals() else timezone("Europe/Warsaw")
@@ -75,7 +75,7 @@ async def schedule_prayer_times():
     
     while True:
         today = date.today()
-        fajr_italy, maghrib_italy = get_prayer_times("Reggio Emilia", "Italy")  # ✅ Changed to Reggio Emilia
+        fajr_italy, maghrib_italy = get_prayer_times("Rome", "Italy")
         fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
 
         if not fajr_italy or not fajr_poland:
@@ -83,8 +83,8 @@ async def schedule_prayer_times():
             continue
 
         # Convert fetched times to local timezone
-        fajr_time_italy = convert_to_local_time(fajr_italy, "reggio emilia")
-        maghrib_time_italy = convert_to_local_time(maghrib_italy, "reggio emilia")
+        fajr_time_italy = convert_to_local_time(fajr_italy, "rome")
+        maghrib_time_italy = convert_to_local_time(maghrib_italy, "rome")
         fajr_time_poland = convert_to_local_time(fajr_poland, "warsaw")
         maghrib_time_poland = convert_to_local_time(maghrib_poland, "warsaw")
 
