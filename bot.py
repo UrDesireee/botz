@@ -5,18 +5,24 @@ from discord.ext import commands
 from datetime import datetime, date
 import os
 
-# ✅ Enable intents, including Message Content Intent
+# ✅ Fix for time zones
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except ImportError:
+    from pytz import timezone  # For Python 3.8 and below
+
+# ✅ Enable intents
 intents = discord.Intents.default()
 intents.message_content = True  
 
 # ✅ Set up bot with command prefix "!"
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ✅ Global channel variables (set via commands)
+# ✅ Global channel variables
 channel_id_italy = None
 channel_id_poland = None
 
-# ✅ Function to fetch prayer times from Aladhan API
+# ✅ Function to fetch prayer times
 def get_prayer_times(city: str, country: str):
     url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country={country}"
     try:
@@ -27,6 +33,27 @@ def get_prayer_times(city: str, country: str):
     except Exception as e:
         print(f"Error fetching prayer times: {e}")
         return None, None
+
+# ✅ Convert to local time for Reggio Emilia & Warsaw
+def convert_to_local_time(prayer_time: str, city: str):
+    fmt = "%H:%M"
+    utc_now = datetime.utcnow()
+
+    # Convert prayer time string to UTC-based datetime
+    prayer_time_utc = datetime.strptime(prayer_time, fmt).replace(
+        year=utc_now.year, month=utc_now.month, day=utc_now.day
+    )
+
+    # Assign correct timezone
+    if city.lower() == "reggio emilia":
+        tz = ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome")
+    elif city.lower() == "warsaw":
+        tz = ZoneInfo("Europe/Warsaw") if "ZoneInfo" in globals() else timezone("Europe/Warsaw")
+    else:
+        return prayer_time_utc  # Fallback to UTC if city is unknown
+
+    # Convert to local time
+    return tz.localize(prayer_time_utc) if "ZoneInfo" not in globals() else prayer_time_utc.replace(tzinfo=tz)
 
 # ✅ Command to set Italy prayer times channel
 @bot.command(name="setupitaly")
@@ -48,31 +75,20 @@ async def schedule_prayer_times():
     
     while True:
         today = date.today()
-        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")
+        fajr_italy, maghrib_italy = get_prayer_times("Reggio Emilia", "Italy")  # ✅ Changed to Reggio Emilia
         fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
 
         if not fajr_italy or not fajr_poland:
             await asyncio.sleep(60)
             continue
 
-        fmt = "%H:%M"
-        now = datetime.now()
-        
-        # Convert fetched times to datetime objects
-        fajr_time_italy = datetime.strptime(fajr_italy, fmt).replace(year=today.year, month=today.month, day=today.day)
-        maghrib_time_italy = datetime.strptime(maghrib_italy, fmt).replace(year=today.year, month=today.month, day=today.day)
-        fajr_time_poland = datetime.strptime(fajr_poland, fmt).replace(year=today.year, month=today.month, day=today.day)
-        maghrib_time_poland = datetime.strptime(maghrib_poland, fmt).replace(year=today.year, month=today.month, day=today.day)
+        # Convert fetched times to local timezone
+        fajr_time_italy = convert_to_local_time(fajr_italy, "reggio emilia")
+        maghrib_time_italy = convert_to_local_time(maghrib_italy, "reggio emilia")
+        fajr_time_poland = convert_to_local_time(fajr_poland, "warsaw")
+        maghrib_time_poland = convert_to_local_time(maghrib_poland, "warsaw")
 
-        # Adjust for past times (schedule for the next day)
-        if now > fajr_time_italy:
-            fajr_time_italy = fajr_time_italy.replace(day=today.day + 1)
-        if now > maghrib_time_italy:
-            maghrib_time_italy = maghrib_time_italy.replace(day=today.day + 1)
-        if now > fajr_time_poland:
-            fajr_time_poland = fajr_time_poland.replace(day=today.day + 1)
-        if now > maghrib_time_poland:
-            maghrib_time_poland = maghrib_time_poland.replace(day=today.day + 1)
+        now = datetime.now(ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome"))
 
         # Prepare events (sorted by soonest)
         events = [
