@@ -24,9 +24,12 @@ intents.messages = True
 intents.message_content = True
 
 # Bot setup
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Function to fetch prayer times
+# Change the TIMEZONE_OFFSET to -1 to correct for your actual timezone
+TIMEZONE_OFFSET = -1  
+
+# Function to fetch prayer times and adjust to your timezone
 def get_prayer_times(city, country):
     url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=2"
     response = requests.get(url)
@@ -34,11 +37,12 @@ def get_prayer_times(city, country):
     fajr = data["data"]["timings"]["Fajr"]
     maghrib = data["data"]["timings"]["Maghrib"]
 
-    # Convert to local timezone
+    # Convert times to match your actual timezone
     fajr_time = (datetime.strptime(fajr, "%H:%M") + timedelta(hours=TIMEZONE_OFFSET)).strftime("%H:%M")
     maghrib_time = (datetime.strptime(maghrib, "%H:%M") + timedelta(hours=TIMEZONE_OFFSET)).strftime("%H:%M")
 
     return fajr_time, maghrib_time
+
 
 # Scheduler setup
 scheduler = AsyncIOScheduler()
@@ -81,8 +85,8 @@ async def send_prayer_message(city, country, user_id, guild_id):
 
 # Function to schedule prayer announcements
 def schedule_prayer_updates():
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Warsaw", "Poland", user_poland, YOUR_GUILD_ID))
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Reggio Emilia", "Italy", user_italy, YOUR_GUILD_ID))
+    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Warsaw", "Poland", user_poland, 1285310396416397415))
+    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Reggio Emilia", "Italy", user_italy, 1285310396416397415))
     scheduler.start()
 
 # Command to set the announcement channel
