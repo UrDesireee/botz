@@ -22,6 +22,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 channel_id_italy = None
 channel_id_poland = None
 
+# ✅ Track sent messages to prevent spam
+sent_messages = {
+    "italy_fajr": False,
+    "italy_maghrib": False,
+    "poland_fajr": False,
+    "poland_maghrib": False
+}
+
 # ✅ Function to fetch prayer times
 def get_prayer_times(city: str, country: str):
     url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country={country}"
@@ -34,7 +42,7 @@ def get_prayer_times(city: str, country: str):
         print(f"Error fetching prayer times: {e}")
         return None, None
 
-# ✅ Convert to local time for Reggio Emilia & Warsaw
+# ✅ Convert to local time for ReggioEmilia & Warsaw
 def convert_to_local_time(prayer_time: str, city: str):
     fmt = "%H:%M"
     utc_now = datetime.now(UTC)  # ✅ Updated: Correct timezone-aware datetime
@@ -60,7 +68,7 @@ def convert_to_local_time(prayer_time: str, city: str):
 async def setup_italy(ctx, channel_id: int):
     global channel_id_italy
     channel_id_italy = channel_id
-    await ctx.send(f"✅ Italy (Reggio Emilia) prayer times channel set to <#{channel_id}>")
+    await ctx.send(f"✅ Italy (ReggioEmilia) prayer times channel set to <#{channel_id}>")
 
 # ✅ Command to set Poland prayer times channel
 @bot.command(name="setuppoland")
@@ -75,7 +83,7 @@ async def schedule_prayer_times():
     
     while True:
         today = date.today()
-        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")  # ✅ Changed to Reggio Emilia
+        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")  # ✅ Changed to "ReggioEmilia"
         fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
 
         if not fajr_italy or not fajr_poland:
@@ -90,36 +98,45 @@ async def schedule_prayer_times():
 
         now = datetime.now(ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome"))
 
-        # Prepare events (sorted by soonest)
-        events = [
-            ("italy_fajr", (fajr_time_italy - now).total_seconds()),
-            ("italy_maghrib", (maghrib_time_italy - now).total_seconds()),
-            ("poland_fajr", (fajr_time_poland - now).total_seconds()),
-            ("poland_maghrib", (maghrib_time_poland - now).total_seconds())
-        ]
-        events.sort(key=lambda x: x[1])
+        # ✅ Check if it's exactly prayer time and send message once per day
+        if now >= fajr_time_italy and not sent_messages["italy_fajr"]:
+            if channel_id_italy:
+                channel = bot.get_channel(channel_id_italy)
+                if channel:
+                    await channel.send(f"☀️ **Fajr time** has arrived in ReggioEmilia! <@816786360693555251>")
+                    sent_messages["italy_fajr"] = True
 
-        # Process the closest prayer time event
-        event, wait_time = events[0]
-        await asyncio.sleep(wait_time)
+        if now >= maghrib_time_italy and not sent_messages["italy_maghrib"]:
+            if channel_id_italy:
+                channel = bot.get_channel(channel_id_italy)
+                if channel:
+                    await channel.send(f"🌙 **Maghrib time** has arrived in ReggioEmilia! <@816786360693555251>")
+                    sent_messages["italy_maghrib"] = True
 
-        # Send message to the correct channel
-        if event == "italy_fajr" and channel_id_italy:
-            channel = bot.get_channel(channel_id_italy)
-            if channel:
-                await channel.send(f"☀️ **Fajr time** has arrived in Reggio Emilia! <@816786360693555251>")
-        elif event == "italy_maghrib" and channel_id_italy:
-            channel = bot.get_channel(channel_id_italy)
-            if channel:
-                await channel.send(f"🌙 **Maghrib time** has arrived in Reggio Emilia! <@816786360693555251>")
-        elif event == "poland_fajr" and channel_id_poland:
-            channel = bot.get_channel(channel_id_poland)
-            if channel:
-                await channel.send(f"☀️ **Fajr time** has arrived in Warsaw! <@1231967004894953513>")
-        elif event == "poland_maghrib" and channel_id_poland:
-            channel = bot.get_channel(channel_id_poland)
-            if channel:
-                await channel.send(f"🌙 **Maghrib time** has arrived in Warsaw! <@1231967004894953513>")
+        if now >= fajr_time_poland and not sent_messages["poland_fajr"]:
+            if channel_id_poland:
+                channel = bot.get_channel(channel_id_poland)
+                if channel:
+                    await channel.send(f"☀️ **Fajr time** has arrived in Warsaw! <@1231967004894953513>")
+                    sent_messages["poland_fajr"] = True
+
+        if now >= maghrib_time_poland and not sent_messages["poland_maghrib"]:
+            if channel_id_poland:
+                channel = bot.get_channel(channel_id_poland)
+                if channel:
+                    await channel.send(f"🌙 **Maghrib time** has arrived in Warsaw! <@1231967004894953513>")
+                    sent_messages["poland_maghrib"] = True
+
+        # ✅ Reset sent message flags at midnight
+        if now.hour == 0 and now.minute == 0:
+            sent_messages["italy_fajr"] = False
+            sent_messages["italy_maghrib"] = False
+            sent_messages["poland_fajr"] = False
+            sent_messages["poland_maghrib"] = False
+            print("✅ Reset sent message flags for the new day")
+
+        # ✅ Sleep for 30 seconds before checking again
+        await asyncio.sleep(30)
 
 # ✅ Start background task when bot is ready
 @bot.event
