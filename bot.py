@@ -5,72 +5,107 @@ from discord.ext import commands
 from datetime import datetime, date
 import os
 
-# Discord bot setup
+# ✅ Fix for time zones
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except ImportError:
+    from pytz import timezone  # For Python 3.8 and below
+
+# ✅ Enable intents
 intents = discord.Intents.default()
+intents.message_content = True  
+
+# ✅ Set up bot with command prefix "!"
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Channel IDs for Poland and Italy (set using bot commands)
+# ✅ Global channel variables
 channel_id_italy = None
 channel_id_poland = None
 
-# Function to fetch Fajr and Maghrib times from the Aladhan API
+# ✅ Function to fetch prayer times
 def get_prayer_times(city: str, country: str):
     url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country={country}"
     try:
         response = requests.get(url)
         data = response.json()
         timings = data["data"]["timings"]
-        fajr_time = timings["Fajr"]
-        maghrib_time = timings["Maghrib"]
-        return fajr_time, maghrib_time
+        return timings["Fajr"], timings["Maghrib"]
     except Exception as e:
         print(f"Error fetching prayer times: {e}")
         return None, None
 
-# Command to set Italy prayer channel
+<<<<<<< HEAD
+# ✅ Convert to local time for Rome & Warsaw
+=======
+# ✅ Convert to local time for Reggio Emilia & Warsaw
+>>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
+def convert_to_local_time(prayer_time: str, city: str):
+    fmt = "%H:%M"
+    utc_now = datetime.utcnow()
+
+    # Convert prayer time string to UTC-based datetime
+    prayer_time_utc = datetime.strptime(prayer_time, fmt).replace(
+        year=utc_now.year, month=utc_now.month, day=utc_now.day
+    )
+
+    # Assign correct timezone
+<<<<<<< HEAD
+    if city.lower() == "rome":
+=======
+    if city.lower() == "reggio emilia":
+>>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
+        tz = ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome")
+    elif city.lower() == "warsaw":
+        tz = ZoneInfo("Europe/Warsaw") if "ZoneInfo" in globals() else timezone("Europe/Warsaw")
+    else:
+        return prayer_time_utc  # Fallback to UTC if city is unknown
+
+    # Convert to local time
+    return tz.localize(prayer_time_utc) if "ZoneInfo" not in globals() else prayer_time_utc.replace(tzinfo=tz)
+
+# ✅ Command to set Italy prayer times channel
 @bot.command(name="setupitaly")
 async def setup_italy(ctx, channel_id: int):
     global channel_id_italy
     channel_id_italy = channel_id
     await ctx.send(f"✅ Italy prayer times channel set to <#{channel_id}>")
 
-# Command to set Poland prayer channel
+# ✅ Command to set Poland prayer times channel
 @bot.command(name="setuppoland")
 async def setup_poland(ctx, channel_id: int):
     global channel_id_poland
     channel_id_poland = channel_id
     await ctx.send(f"✅ Poland prayer times channel set to <#{channel_id}>")
 
-# Function to schedule and send prayer notifications
+# ✅ Background task to send prayer notifications
 async def schedule_prayer_times():
     await bot.wait_until_ready()
+    
     while True:
         today = date.today()
-        fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")
+<<<<<<< HEAD
+        fajr_italy, maghrib_italy = get_prayer_times("Rome", "Italy")
+=======
+        fajr_italy, maghrib_italy = get_prayer_times("Reggio Emilia", "Italy")  # ✅ Changed to Reggio Emilia
+>>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
         fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
 
         if not fajr_italy or not fajr_poland:
             await asyncio.sleep(60)
             continue
 
-        fmt = "%H:%M"
-        now = datetime.now()
-        
-        # Convert fetched times to datetime objects
-        fajr_time_italy = datetime.strptime(fajr_italy, fmt).replace(year=today.year, month=today.month, day=today.day)
-        maghrib_time_italy = datetime.strptime(maghrib_italy, fmt).replace(year=today.year, month=today.month, day=today.day)
-        fajr_time_poland = datetime.strptime(fajr_poland, fmt).replace(year=today.year, month=today.month, day=today.day)
-        maghrib_time_poland = datetime.strptime(maghrib_poland, fmt).replace(year=today.year, month=today.month, day=today.day)
+        # Convert fetched times to local timezone
+<<<<<<< HEAD
+        fajr_time_italy = convert_to_local_time(fajr_italy, "rome")
+        maghrib_time_italy = convert_to_local_time(maghrib_italy, "rome")
+=======
+        fajr_time_italy = convert_to_local_time(fajr_italy, "reggio emilia")
+        maghrib_time_italy = convert_to_local_time(maghrib_italy, "reggio emilia")
+>>>>>>> 633bb6b8e3b07a74250f57773b72ea787bb9f583
+        fajr_time_poland = convert_to_local_time(fajr_poland, "warsaw")
+        maghrib_time_poland = convert_to_local_time(maghrib_poland, "warsaw")
 
-        # Ensure scheduling for the next upcoming times
-        if now > fajr_time_italy:
-            fajr_time_italy = fajr_time_italy.replace(day=today.day + 1)
-        if now > maghrib_time_italy:
-            maghrib_time_italy = maghrib_time_italy.replace(day=today.day + 1)
-        if now > fajr_time_poland:
-            fajr_time_poland = fajr_time_poland.replace(day=today.day + 1)
-        if now > maghrib_time_poland:
-            maghrib_time_poland = maghrib_time_poland.replace(day=today.day + 1)
+        now = datetime.now(ZoneInfo("Europe/Rome") if "ZoneInfo" in globals() else timezone("Europe/Rome"))
 
         # Prepare events (sorted by soonest)
         events = [
@@ -103,16 +138,15 @@ async def schedule_prayer_times():
             if channel:
                 await channel.send(f"🌙 **Maghrib time** has arrived! <@1231967004894953513>")
 
-# Background task to check and send prayer notifications
+# ✅ Start background task when bot is ready
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
-    asyncio.create_task(schedule_prayer_times())  # Use asyncio.create_task instead
+    print(f"✅ Logged in as {bot.user}")
+    asyncio.create_task(schedule_prayer_times())
 
-
-# Run the bot
+# ✅ Run the bot securely
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
-    raise ValueError("Bot token is missing! Set DISCORD_BOT_TOKEN as an environment variable.")
-bot.run(TOKEN)
+    raise ValueError("🚨 Bot token is missing! Set DISCORD_BOT_TOKEN as an environment variable.")
 
+bot.run(TOKEN)
