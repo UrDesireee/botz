@@ -104,8 +104,14 @@ async def schedule_prayer_times():
                 await channel.send(f"🌙 **Maghrib time** has arrived! <@1231967004894953513>")
 
 # Background task to check and send prayer notifications
-bot.loop.create_task(schedule_prayer_times())
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+    asyncio.create_task(schedule_prayer_times())  # Use asyncio.create_task instead
+
 
 # Run the bot
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")  # Store token as an environment variable
-bot.run(TOKEN)
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("Bot token is missing! Set DISCORD_BOT_TOKEN as an environment variable.")
+
