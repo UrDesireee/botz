@@ -5,45 +5,47 @@ from discord.ext import commands
 from datetime import datetime, date
 import os
 
-# Discord bot setup
+# ✅ Enable intents, including Message Content Intent
 intents = discord.Intents.default()
+intents.message_content = True  
+
+# ✅ Set up bot with command prefix "!"
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Channel IDs for Poland and Italy (set using bot commands)
+# ✅ Global channel variables (set via commands)
 channel_id_italy = None
 channel_id_poland = None
 
-# Function to fetch Fajr and Maghrib times from the Aladhan APIs
+# ✅ Function to fetch prayer times from Aladhan API
 def get_prayer_times(city: str, country: str):
     url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country={country}"
     try:
         response = requests.get(url)
         data = response.json()
         timings = data["data"]["timings"]
-        fajr_time = timings["Fajr"]
-        maghrib_time = timings["Maghrib"]
-        return fajr_time, maghrib_time
+        return timings["Fajr"], timings["Maghrib"]
     except Exception as e:
         print(f"Error fetching prayer times: {e}")
         return None, None
 
-# Command to set Italy prayer channel
+# ✅ Command to set Italy prayer times channel
 @bot.command(name="setupitaly")
 async def setup_italy(ctx, channel_id: int):
     global channel_id_italy
     channel_id_italy = channel_id
     await ctx.send(f"✅ Italy prayer times channel set to <#{channel_id}>")
 
-# Command to set Poland prayer channel
+# ✅ Command to set Poland prayer times channel
 @bot.command(name="setuppoland")
 async def setup_poland(ctx, channel_id: int):
     global channel_id_poland
     channel_id_poland = channel_id
     await ctx.send(f"✅ Poland prayer times channel set to <#{channel_id}>")
 
-# Function to schedule and send prayer notifications
+# ✅ Background task to send prayer notifications
 async def schedule_prayer_times():
     await bot.wait_until_ready()
+    
     while True:
         today = date.today()
         fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")
@@ -62,7 +64,7 @@ async def schedule_prayer_times():
         fajr_time_poland = datetime.strptime(fajr_poland, fmt).replace(year=today.year, month=today.month, day=today.day)
         maghrib_time_poland = datetime.strptime(maghrib_poland, fmt).replace(year=today.year, month=today.month, day=today.day)
 
-        # Ensure scheduling for the next upcoming times
+        # Adjust for past times (schedule for the next day)
         if now > fajr_time_italy:
             fajr_time_italy = fajr_time_italy.replace(day=today.day + 1)
         if now > maghrib_time_italy:
@@ -103,16 +105,15 @@ async def schedule_prayer_times():
             if channel:
                 await channel.send(f"🌙 **Maghrib time** has arrived! <@1231967004894953513>")
 
-# Background task to check and send prayer notifications
+# ✅ Start background task when bot is ready
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
-    asyncio.create_task(schedule_prayer_times())  # Use asyncio.create_task instead
+    print(f"✅ Logged in as {bot.user}")
+    asyncio.create_task(schedule_prayer_times())
 
-
-# Run the bot
+# ✅ Run the bot securely
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 if not TOKEN:
-    raise ValueError("Bot token is missing! Set DISCORD_BOT_TOKEN as an environment variable.")
-bot.run(TOKEN)
+    raise ValueError("🚨 Bot token is missing! Set DISCORD_BOT_TOKEN as an environment variable.")
 
+bot.run(TOKEN)
