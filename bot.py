@@ -13,7 +13,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 channel_id_italy = None
 channel_id_poland = None
 
-# Function to fetch Fajr and Maghrib times from the Aladhan API
+# Function to fetch Fajr and Maghrib times from the Aladhan APIs
 def get_prayer_times(city: str, country: str):
     url = f"http://api.aladhan.com/v1/timingsByCity?city={city}&country={country}"
     try:
