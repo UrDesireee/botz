@@ -1,12 +1,14 @@
 import discord
 import requests
 import asyncio
+import os
 from discord.ext import commands, tasks
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
 
 # Bot token (Replace with your actual bot token)
-TOKEN = "YOUR_DISCORD_BOT_TOKEN"
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+
 
 # Dictionary to store the prayer channel
 prayer_channels = {}
