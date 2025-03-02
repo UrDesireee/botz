@@ -77,7 +77,7 @@ def get_prayer_times(city_name, country):
     params = {
         'city': city_name,
         'country': country,
-        'method': 2  # ISNA calculation method
+        'method': 3  # ISNA calculation method
     }
     
     try:
