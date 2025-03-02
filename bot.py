@@ -4,7 +4,7 @@ import requests
 import datetime
 import os
 import pytz
-import asyncio
+import time
 
 # Bot configuration
 TOKEN = os.environ.get('DISCORD_TOKEN')  # Discord bot token
@@ -20,10 +20,20 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Animated emoji IDs - Using the one provided and placeholders for others
+animated_emojis = {
+    "99": "1304880064160338021",  # Your provided animated emoji
+    "fajr": "EMOJI_ID_HERE",      # Placeholder - replace with actual ID
+    "maghrib": "EMOJI_ID_HERE",   # Placeholder - replace with actual ID
+    "clock": "EMOJI_ID_HERE",     # Placeholder - replace with actual ID
+    "location": "EMOJI_ID_HERE",  # Placeholder - replace with actual ID
+    "prayer": "EMOJI_ID_HERE"     # Placeholder - replace with actual ID
+}
+
 # City information
 cities = {
     "reggio": {
-        "name": "Reggio Emilia, Italy",
+        "name": "Reggio Emilia",
         "country": "Italy",
         "timezone": "Europe/Rome",
         "user_id": REGGIO_USER_ID,
@@ -32,7 +42,7 @@ cities = {
         "emoji": "🇮🇹"
     },
     "warsaw": {
-        "name": "Warsaw, Poland",
+        "name": "Warsaw",
         "country": "Poland",
         "timezone": "Europe/Warsaw",
         "user_id": WARSAW_USER_ID,
@@ -42,16 +52,30 @@ cities = {
     }
 }
 
-# Prayer emojis
-prayer_emojis = {
-    "Fajr": "🌅",
-    "Maghrib": "🕌"
+# Prayer emojis and colors
+prayer_info = {
+    "Fajr": {
+        "emoji": "🌅",  # Fallback regular emoji
+        "animated_emoji_key": "fajr",  # Key for the animated emoji in the dictionary
+        "color": 0x48C9B0  # Teal
+    },
+    "Maghrib": {
+        "emoji": "🕌",  # Fallback regular emoji
+        "animated_emoji_key": "maghrib",  # Key for the animated emoji in the dictionary
+        "color": 0x9B59B6  # Purple
+    }
 }
+
+# Helper function to get animated emoji or fallback to regular emoji
+def get_emoji(key, fallback=""):
+    if key in animated_emojis and animated_emojis[key] != "EMOJI_ID_HERE":
+        return f"<a:{key}:{animated_emojis[key]}>"
+    return fallback
 
 # Function to get prayer times for a specific city
 def get_prayer_times(city_name, country):
     params = {
-        'city': city_name.split(',')[0],  # Extract just the city name
+        'city': city_name,
         'country': country,
         'method': 2  # ISNA calculation method
     }
@@ -66,7 +90,8 @@ def get_prayer_times(city_name, country):
             return {
                 "date": date,
                 "Fajr": timings['Fajr'],
-                "Maghrib": timings['Maghrib']
+                "Maghrib": timings['Maghrib'],
+                "timestamp": data['data']['date']['timestamp']
             }
         else:
             print(f"Error fetching prayer times: {data.get('status')}")
@@ -74,6 +99,19 @@ def get_prayer_times(city_name, country):
     except Exception as e:
         print(f"Error in API request: {e}")
         return None
+
+# Function to convert HH:MM to Unix timestamp for a given date and timezone
+def time_to_timestamp(time_str, date_str, timezone_str):
+    # Parse the date and time
+    hour, minute = map(int, time_str.split(':'))
+    day, month, year = map(int, date_str.split('-'))
+    
+    # Create a datetime object in the specified timezone
+    tz = pytz.timezone(timezone_str)
+    dt = datetime.datetime(year, month, day, hour, minute, 0, tzinfo=tz)
+    
+    # Convert to Unix timestamp (seconds since epoch)
+    return int(dt.timestamp())
 
 # Reset notification flags when the day changes
 def reset_notification_flags(city_key):
@@ -131,63 +169,79 @@ async def check_prayer_times():
             if abs(time_diff) < 1:  # Within 1 minute
                 user_to_ping = f"<@{city_info['user_id']}>"
                 
-                # Create fancy embedded message with emojis
+                # Get Unix timestamps for Discord timestamp formatting
+                current_timestamp = int(city_current_time.timestamp())
+                prayer_timestamp = time_to_timestamp(prayer_time_str, prayer_data["date"], city_info["timezone"])
+                
+                # Get animated emoji or fallback to regular
+                prayer_emoji = get_emoji(prayer_info[prayer]["animated_emoji_key"], prayer_info[prayer]["emoji"])
+                clock_emoji = get_emoji("clock", "⏰")
+                location_emoji = get_emoji("location", "📍")
+                prayer_time_emoji = get_emoji("prayer", "⏳")
+                test_emoji = get_emoji("99", "")  # Using your provided emoji
+                
+                # Create a cleanly formatted embedded message
                 embed = discord.Embed(
-                    title=f"{prayer_emojis[prayer]} {prayer} Time {prayer_emojis[prayer]}",
-                    color=0x3498db if prayer == "Fajr" else 0x9b59b6
+                    description=f"**{prayer_emoji} {prayer} Time {prayer_emoji}**",
+                    color=prayer_info[prayer]['color']
                 )
                 
-                # Add fields with current time, location, and prayer time
+                # Add location and time with Discord timestamp format
                 embed.add_field(
-                    name="⏰ Current Time", 
-                    value=city_current_time.strftime("%H:%M"), 
-                    inline=True
-                )
-                embed.add_field(
-                    name=f"📍 Location", 
-                    value=city_info["name"], 
-                    inline=True
-                )
-                embed.add_field(
-                    name="⏳ Prayer Time", 
-                    value=prayer_time_str, 
-                    inline=True
+                    name="",
+                    value=f"{clock_emoji} **Current Time:** <t:{current_timestamp}:t>\n"
+                         f"{location_emoji} **Location:** {city_info['emoji']} {city_info['name']}, {city_info['country']}\n"
+                         f"{prayer_time_emoji} **Prayer Time:** <t:{prayer_timestamp}:t>\n"
+                         f"{test_emoji} Using your provided emoji",
+                    inline=False
                 )
                 
-                # Add a colored line on the left (using embed color)
+                # Add a nice footer with the date
+                embed.set_footer(text=f"Date: {prayer_data['date']}")
+                
                 await channel.send(f"{user_to_ping}, it's time for prayer!", embed=embed)
                 cities[city_key]["prayers_notified"][prayer] = True
                 print(f"Notification sent for {prayer} in {city_info['name']}")
 
 @bot.command(name='gettime')
 async def get_time(ctx):
-    # Create a fancy embedded message with emojis
+    # Create a cleaner, more spaced out embed
     embed = discord.Embed(
-        title="🕌 Today's Prayer Times 🕌",
-        color=0x2ecc71  # Green color for the embed
+        title=f"{get_emoji('99', '🕌')} Today's Prayer Times {get_emoji('99', '🕌')}",
+        color=0x2ecc71,  # Green color
+        description="Prayer times for your locations today:"
     )
     
     for city_key, city_info in cities.items():
         prayer_data = get_prayer_times(city_info["name"], city_info["country"])
         
         if prayer_data:
-            # Add a field for each city with prayer times
-            city_times = (
-                f"{prayer_emojis['Fajr']} Fajr: {prayer_data['Fajr']}\n"
-                f"{prayer_emojis['Maghrib']} Maghrib: {prayer_data['Maghrib']}"
-            )
+            # Get Unix timestamps for prayer times
+            fajr_timestamp = time_to_timestamp(prayer_data["Fajr"], prayer_data["date"], city_info["timezone"])
+            maghrib_timestamp = time_to_timestamp(prayer_data["Maghrib"], prayer_data["date"], city_info["timezone"])
             
+            # Get animated emojis for each prayer
+            fajr_emoji = get_emoji(prayer_info["Fajr"]["animated_emoji_key"], prayer_info["Fajr"]["emoji"])
+            maghrib_emoji = get_emoji(prayer_info["Maghrib"]["animated_emoji_key"], prayer_info["Maghrib"]["emoji"])
+            
+            # Format each city's prayer times with Discord timestamp format
             embed.add_field(
-                name=f"{city_info['emoji']} {city_info['name']}",
-                value=city_times,
+                name=f"\n{city_info['emoji']} **{city_info['name']}, {city_info['country']}**",
+                value=f"**Date:** {prayer_data['date']}\n\n"
+                     f"{fajr_emoji} **Fajr:** <t:{fajr_timestamp}:t>\n\n"
+                     f"{maghrib_emoji} **Maghrib:** <t:{maghrib_timestamp}:t>\n\n"
+                     f"{get_emoji('99', '')}\n\u200B",
                 inline=False
             )
         else:
             embed.add_field(
-                name=f"{city_info['emoji']} {city_info['name']}",
-                value="Could not fetch prayer times.",
+                name=f"{city_info['emoji']} {city_info['name']}, {city_info['country']}",
+                value="Could not fetch prayer times.\n\u200B",
                 inline=False
             )
+    
+    # Add a helpful footer
+    embed.set_footer(text="Use !gettime to view today's prayer times • Times shown in your local timezone")
     
     await ctx.send(embed=embed)
 
