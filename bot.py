@@ -1,10 +1,9 @@
 import discord
 import os
 import requests
-import pytz
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Read Token from Railway Environment Variable
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -15,7 +14,7 @@ intents.messages = True
 intents.message_content = True
 
 # Bot setup
-bot = commands.Bot(command_prefix="/", intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Dictionary to store the prayer announcement channel per server
 prayer_channels = {}
@@ -24,39 +23,28 @@ prayer_channels = {}
 user_poland = "<@1231967004894953513>"
 user_italy = "<@816786360693555251>"
 
-# Timezone Setup (Fixing Server vs Actual Time Issues)
-SERVER_TZ = pytz.timezone("Europe/Warsaw")  # Assuming Railway is using Warsaw time
-CORRECT_TZ = pytz.timezone("Etc/GMT")  # The correct timezone (GMT+0)
-
-# Function to fetch prayer times and adjust to correct timezone
+# Function to fetch prayer times **WITHOUT EXTRA TIMEZONE CONVERSION**
 def get_prayer_times(city, country):
-    url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=2"
+    url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=3"  # MWL method
     response = requests.get(url)
     data = response.json()
-    fajr = data["data"]["timings"]["Fajr"]
-    maghrib = data["data"]["timings"]["Maghrib"]
-
-    # Convert times from server timezone (GMT+1) to correct timezone (GMT+0)
-    fajr_time = datetime.strptime(fajr, "%H:%M").replace(tzinfo=SERVER_TZ).astimezone(CORRECT_TZ).strftime("%H:%M")
-    maghrib_time = datetime.strptime(maghrib, "%H:%M").replace(tzinfo=SERVER_TZ).astimezone(CORRECT_TZ).strftime("%H:%M")
+    
+    fajr_time = data["data"]["timings"]["Fajr"]  # Already in local time
+    maghrib_time = data["data"]["timings"]["Maghrib"]  # Already in local time
 
     return fajr_time, maghrib_time
-
-# Scheduler setup
-scheduler = AsyncIOScheduler()
 
 # Function to send prayer messages
 async def send_prayer_message(city, country, user_id, guild_id):
     fajr_time, maghrib_time = get_prayer_times(city, country)
-
-    now = datetime.now(CORRECT_TZ).strftime("%H:%M")  # Get current time in GMT+0
+    
+    now = datetime.now().strftime("%H:%M")  # Get current time in local format
 
     guild = bot.get_guild(guild_id)
     if not guild or guild_id not in prayer_channels:
         return
     
     channel = bot.get_channel(prayer_channels[guild_id])
-    
     if not channel:
         return
 
@@ -71,7 +59,7 @@ async def send_prayer_message(city, country, user_id, guild_id):
         prayer_time = maghrib_time
         emoji = "🌇"
     else:
-        return  # If it's not Fajr or Maghrib, do nothing
+        return
 
     # Create an embed message
     embed = discord.Embed(title=title, color=color)
@@ -83,8 +71,9 @@ async def send_prayer_message(city, country, user_id, guild_id):
 
 # Function to schedule prayer announcements correctly
 def schedule_prayer_updates():
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Warsaw", "Poland", user_poland, 1285310396416397415), timezone=CORRECT_TZ)
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Reggio Emilia", "Italy", user_italy, 1285310396416397415), timezone=CORRECT_TZ)
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Warsaw", "Poland", user_poland, 1285310396416397415))
+    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Reggio Emilia", "Italy", user_italy, 1285310396416397415))
     scheduler.start()
 
 # Command to set the announcement channel
@@ -105,7 +94,7 @@ async def gettime(ctx):
     embed.add_field(name="📍 **Warsaw, Poland**", value=f"🌙 Fajr: `{fajr_poland}`\n🌅 Maghrib: `{maghrib_poland}`", inline=False)
     embed.add_field(name="📍 **Reggio Emilia, Italy**", value=f"🌙 Fajr: `{fajr_italy}`\n🌅 Maghrib: `{maghrib_italy}`", inline=False)
     
-    embed.set_footer(text="Prayer times are adjusted for your timezone (GMT+0).")
+    embed.set_footer(text="Prayer times are based on the Muslim World League (MWL) method.")
 
     await ctx.send(embed=embed)
 
