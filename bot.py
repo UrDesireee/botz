@@ -1,108 +1,195 @@
 import discord
-import os
+from discord.ext import commands, tasks
 import requests
-from discord.ext import commands
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime
+import datetime
+import os
+import pytz
+import asyncio
 
-# Read Token from Railway Environment Variable
-TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+# Bot configuration
+TOKEN = os.environ.get('DISCORD_TOKEN')  # Discord bot token
+CHANNEL_ID = int(os.environ.get('CHANNEL_ID'))  # Channel ID where messages will be sent
+REGGIO_USER_ID = 816786360693555251  # User ID to ping for Reggio Emilia
+WARSAW_USER_ID = 1231967004894953513  # User ID to ping for Warsaw
 
-# Intents setup
-intents = discord.Intents.default()
-intents.messages = True
-intents.message_content = True
+# Prayer API configuration
+PRAYER_API_URL = "http://api.aladhan.com/v1/timingsByCity"
 
 # Bot setup
-bot = commands.Bot(command_prefix="!", intents=intents)
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Dictionary to store the prayer announcement channel per server
-prayer_channels = {}
+# City information
+cities = {
+    "reggio": {
+        "name": "Reggio Emilia, Italy",
+        "country": "Italy",
+        "timezone": "Europe/Rome",
+        "user_id": REGGIO_USER_ID,
+        "last_notified_date": None,
+        "prayers_notified": {"Fajr": False, "Maghrib": False},
+        "emoji": "🇮🇹"
+    },
+    "warsaw": {
+        "name": "Warsaw, Poland",
+        "country": "Poland",
+        "timezone": "Europe/Warsaw",
+        "user_id": WARSAW_USER_ID,
+        "last_notified_date": None,
+        "prayers_notified": {"Fajr": False, "Maghrib": False},
+        "emoji": "🇵🇱"
+    }
+}
 
-# User IDs for pinging
-user_poland = "<@1231967004894953513>"
-user_italy = "<@816786360693555251>"
+# Prayer emojis
+prayer_emojis = {
+    "Fajr": "🌅",
+    "Maghrib": "🕌"
+}
 
-# Function to fetch prayer times **WITHOUT EXTRA TIMEZONE CONVERSION**
-def get_prayer_times(city, country):
-    url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=3"  # MWL method
-    response = requests.get(url)
-    data = response.json()
+# Function to get prayer times for a specific city
+def get_prayer_times(city_name, country):
+    params = {
+        'city': city_name.split(',')[0],  # Extract just the city name
+        'country': country,
+        'method': 2  # ISNA calculation method
+    }
     
-    fajr_time = data["data"]["timings"]["Fajr"]  # Already in local time
-    maghrib_time = data["data"]["timings"]["Maghrib"]  # Already in local time
+    try:
+        response = requests.get(PRAYER_API_URL, params=params)
+        data = response.json()
+        
+        if response.status_code == 200 and data['code'] == 200:
+            timings = data['data']['timings']
+            date = data['data']['date']['gregorian']['date']
+            return {
+                "date": date,
+                "Fajr": timings['Fajr'],
+                "Maghrib": timings['Maghrib']
+            }
+        else:
+            print(f"Error fetching prayer times: {data.get('status')}")
+            return None
+    except Exception as e:
+        print(f"Error in API request: {e}")
+        return None
 
-    return fajr_time, maghrib_time
+# Reset notification flags when the day changes
+def reset_notification_flags(city_key):
+    current_date = datetime.datetime.now().strftime("%d-%m-%Y")
+    if cities[city_key]["last_notified_date"] != current_date:
+        cities[city_key]["last_notified_date"] = current_date
+        cities[city_key]["prayers_notified"] = {"Fajr": False, "Maghrib": False}
 
-# Function to send prayer messages
-async def send_prayer_message(city, country, user_id, guild_id):
-    fajr_time, maghrib_time = get_prayer_times(city, country)
-    
-    now = datetime.now().strftime("%H:%M")  # Get current time in local format
-
-    guild = bot.get_guild(guild_id)
-    if not guild or guild_id not in prayer_channels:
-        return
-    
-    channel = bot.get_channel(prayer_channels[guild_id])
-    if not channel:
-        return
-
-    if now == fajr_time:
-        title = "🌙 Fajr Time 🌙"
-        color = discord.Color.blue()
-        prayer_time = fajr_time
-        emoji = "🕌"
-    elif now == maghrib_time:
-        title = "🌅 Maghrib Time 🌅"
-        color = discord.Color.orange()
-        prayer_time = maghrib_time
-        emoji = "🌇"
-    else:
-        return
-
-    # Create an embed message
-    embed = discord.Embed(title=title, color=color)
-    embed.add_field(name="🕒 Current Time", value=f"`{now}`", inline=True)
-    embed.add_field(name="📍 Location", value=f"{city}, {country}", inline=True)
-    embed.add_field(name="⏳ Prayer Time", value=f"`{prayer_time}`", inline=True)
-    
-    await channel.send(f"{emoji} {user_id}, it's time for prayer!", embed=embed)
-
-# Function to schedule prayer announcements correctly
-def schedule_prayer_updates():
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Warsaw", "Poland", user_poland, 1285310396416397415))
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Reggio Emilia", "Italy", user_italy, 1285310396416397415))
-    scheduler.start()
-
-# Command to set the announcement channel
-@bot.command()
-async def setupchannel(ctx, channel_id: int):
-    prayer_channels[ctx.guild.id] = channel_id
-    await ctx.send(f"✅ Prayer announcements will be sent to <#{channel_id}>")
-
-# Command to get today's Fajr and Maghrib times
-@bot.command()
-async def gettime(ctx):
-    fajr_poland, maghrib_poland = get_prayer_times("Warsaw", "Poland")
-    fajr_italy, maghrib_italy = get_prayer_times("ReggioEmilia", "Italy")
-
-    # Create an embed message
-    embed = discord.Embed(title="🕌 Today's Prayer Times 🕌", color=discord.Color.green())
-    
-    embed.add_field(name="📍 **Warsaw, Poland**", value=f"🌙 Fajr: `{fajr_poland}`\n🌅 Maghrib: `{maghrib_poland}`", inline=False)
-    embed.add_field(name="📍 **Reggio Emilia, Italy**", value=f"🌙 Fajr: `{fajr_italy}`\n🌅 Maghrib: `{maghrib_italy}`", inline=False)
-    
-    embed.set_footer(text="Prayer times are based on the Muslim World League (MWL) method.")
-
-    await ctx.send(embed=embed)
-
-# Start event
 @bot.event
 async def on_ready():
-    print(f"{bot.user} has connected!")
-    schedule_prayer_updates()
+    print(f'{bot.user} has connected to Discord!')
+    check_prayer_times.start()
+
+@tasks.loop(minutes=1)
+async def check_prayer_times():
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        print(f"Channel with ID {CHANNEL_ID} not found.")
+        return
+    
+    current_time = datetime.datetime.now(pytz.timezone('UTC'))
+    
+    for city_key, city_info in cities.items():
+        # Reset notification flags if it's a new day
+        reset_notification_flags(city_key)
+        
+        # Get prayer times for the city
+        prayer_data = get_prayer_times(city_info["name"], city_info["country"])
+        if not prayer_data:
+            continue
+        
+        # Convert to city's timezone for comparison
+        city_timezone = pytz.timezone(city_info["timezone"])
+        city_current_time = current_time.astimezone(city_timezone)
+        
+        # Check each prayer time we're interested in
+        for prayer in ["Fajr", "Maghrib"]:
+            if cities[city_key]["prayers_notified"][prayer]:
+                continue  # Skip if already notified today
+            
+            prayer_time_str = prayer_data[prayer]
+            prayer_hour, prayer_minute = map(int, prayer_time_str.split(':'))
+            
+            # Create a datetime object for the prayer time
+            prayer_datetime = city_current_time.replace(
+                hour=prayer_hour, 
+                minute=prayer_minute, 
+                second=0, 
+                microsecond=0
+            )
+            
+            # Check if it's time to send the notification
+            time_diff = (prayer_datetime - city_current_time).total_seconds() / 60
+            
+            if abs(time_diff) < 1:  # Within 1 minute
+                user_to_ping = f"<@{city_info['user_id']}>"
+                
+                # Create fancy embedded message with emojis
+                embed = discord.Embed(
+                    title=f"{prayer_emojis[prayer]} {prayer} Time {prayer_emojis[prayer]}",
+                    color=0x3498db if prayer == "Fajr" else 0x9b59b6
+                )
+                
+                # Add fields with current time, location, and prayer time
+                embed.add_field(
+                    name="⏰ Current Time", 
+                    value=city_current_time.strftime("%H:%M"), 
+                    inline=True
+                )
+                embed.add_field(
+                    name=f"📍 Location", 
+                    value=city_info["name"], 
+                    inline=True
+                )
+                embed.add_field(
+                    name="⏳ Prayer Time", 
+                    value=prayer_time_str, 
+                    inline=True
+                )
+                
+                # Add a colored line on the left (using embed color)
+                await channel.send(f"{user_to_ping}, it's time for prayer!", embed=embed)
+                cities[city_key]["prayers_notified"][prayer] = True
+                print(f"Notification sent for {prayer} in {city_info['name']}")
+
+@bot.command(name='gettime')
+async def get_time(ctx):
+    # Create a fancy embedded message with emojis
+    embed = discord.Embed(
+        title="🕌 Today's Prayer Times 🕌",
+        color=0x2ecc71  # Green color for the embed
+    )
+    
+    for city_key, city_info in cities.items():
+        prayer_data = get_prayer_times(city_info["name"], city_info["country"])
+        
+        if prayer_data:
+            # Add a field for each city with prayer times
+            city_times = (
+                f"{prayer_emojis['Fajr']} Fajr: {prayer_data['Fajr']}\n"
+                f"{prayer_emojis['Maghrib']} Maghrib: {prayer_data['Maghrib']}"
+            )
+            
+            embed.add_field(
+                name=f"{city_info['emoji']} {city_info['name']}",
+                value=city_times,
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name=f"{city_info['emoji']} {city_info['name']}",
+                value="Could not fetch prayer times.",
+                inline=False
+            )
+    
+    await ctx.send(embed=embed)
 
 # Run the bot
 bot.run(TOKEN)
