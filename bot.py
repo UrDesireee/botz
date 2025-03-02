@@ -76,8 +76,8 @@ async def send_prayer_message(city, country, user_id, guild_id):
 
 # Function to schedule prayer announcements correctly
 def schedule_prayer_updates():
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Warsaw", "Poland", user_poland, 1285310396416397415), timezone=CORRECT_TZ)
-    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("ReggioEmilia", "Italy", user_italy, 1285310396416397415), timezone=CORRECT_TZ)
+    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("Warsaw", "Poland", 1231967004894953513, 1285310396416397415), timezone=CORRECT_TZ)
+    scheduler.add_job(send_prayer_message, "cron", hour="*", minute="*", args=("ReggioEmilia", "Italy", 816786360693555251, 1285310396416397415), timezone=CORRECT_TZ)
     scheduler.start()
 
 # Start event
