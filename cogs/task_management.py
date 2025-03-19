@@ -53,19 +53,29 @@ class TaskManagement(commands.Cog):
         # Reset daily tasks distribution
         daily_tasks = {}
         
-        # Simple distribution algorithm
-        tasks_per_day = max(1, len(incomplete_tasks) // days)
-        remainder = len(incomplete_tasks) % days
-        
-        start_idx = 0
-        for day in range(1, days + 1):
-            end_idx = start_idx + tasks_per_day
-            if remainder > 0:
-                end_idx += 1
-                remainder -= 1
-                
-            daily_tasks[f"day{day}"] = [task["id"] for task in incomplete_tasks[start_idx:end_idx]]
-            start_idx = end_idx
+        # Handle case where there are more days than tasks
+        if len(incomplete_tasks) < days:
+            # Distribute one task per day until we run out of tasks
+            for day in range(1, len(incomplete_tasks) + 1):
+                daily_tasks[f"day{day}"] = [incomplete_tasks[day-1]["id"]]
+            
+            # Add break days for the remaining days
+            for day in range(len(incomplete_tasks) + 1, days + 1):
+                daily_tasks[f"day{day}"] = []  # Empty list means break day
+        else:
+            # Distribute tasks evenly across days
+            tasks_per_day = max(1, len(incomplete_tasks) // days)
+            remainder = len(incomplete_tasks) % days
+            
+            start_idx = 0
+            for day in range(1, days + 1):
+                end_idx = start_idx + tasks_per_day
+                if remainder > 0:
+                    end_idx += 1
+                    remainder -= 1
+                    
+                daily_tasks[f"day{day}"] = [task["id"] for task in incomplete_tasks[start_idx:end_idx]]
+                start_idx = end_idx
         
         # Update the tasks data
         channel_data["daily_tasks"] = daily_tasks
@@ -75,20 +85,13 @@ class TaskManagement(commands.Cog):
         save_tasks(self.tasks_data)
 
     @commands.command(name="setup")
-    async def setup(self, ctx, channel_id=None):
-        """Set up task management for a channel"""
-        if channel_id is None:
-            channel_id = ctx.channel.id
-        
-        # Check if the channel exists
-        channel = self.bot.get_channel(int(channel_id))
-        if not channel:
-            await ctx.send("❌ Channel not found.")
-            return
+    async def setup(self, ctx):
+        """Set up task management for the current channel"""
+        channel_id = str(ctx.channel.id)
         
         # Initialize tasks for the channel
-        if str(channel_id) not in self.tasks_data:
-            self.tasks_data[str(channel_id)] = {
+        if channel_id not in self.tasks_data:
+            self.tasks_data[channel_id] = {
                 "tasks": [],
                 "days": 0,
                 "setup_mode": True,
@@ -97,7 +100,7 @@ class TaskManagement(commands.Cog):
                 "start_date": None
             }
         else:
-            self.tasks_data[str(channel_id)]["setup_mode"] = True
+            self.tasks_data[channel_id]["setup_mode"] = True
         
         save_tasks(self.tasks_data)
         
@@ -123,6 +126,10 @@ class TaskManagement(commands.Cog):
         if user_id in self.setup_users:
             setup_data = self.setup_users[user_id]
             channel_id = setup_data["channel_id"]
+            
+            # Ignore command messages
+            if message.content.startswith('!'):
+                return
             
             # Check if the user is in task input stage
             if setup_data["stage"] == "tasks":
@@ -228,21 +235,24 @@ class TaskManagement(commands.Cog):
         daily_tasks = channel_data.get("daily_tasks", {})
         if daily_tasks and current_day > 0:
             today_tasks = daily_tasks.get(f"day{current_day}", [])
-            today_tasks_text = ""
-            for task_id in today_tasks:
-                task = next((t for t in tasks if t["id"] == task_id), None)
-                if task:
-                    status = "✅" if task["completed"] else "❌"
-                    today_tasks_text += f"{task_id}. {status} {task['name']}\n"
-            
-            embed.add_field(name="Today's Tasks", value=today_tasks_text or "No tasks for today", inline=False)
+            if today_tasks:
+                today_tasks_text = ""
+                for task_id in today_tasks:
+                    task = next((t for t in tasks if t["id"] == task_id), None)
+                    if task:
+                        status = "✅" if task["completed"] else "❌"
+                        today_tasks_text += f"{task_id}. {status} {task['name']}\n"
+                
+                embed.add_field(name="Today's Tasks", value=today_tasks_text, inline=False)
+            else:
+                embed.add_field(name="Today's Tasks", value="Break day! No tasks for today.", inline=False)
         
         await channel.send(embed=embed)
 
     @commands.command(name="list")
     async def list_tasks(self, ctx):
         """List all tasks for the channel"""
-        channel_id = ctx.channel.id
+        channel_id = str(ctx.channel.id)
         await self.show_task_list(ctx.channel, channel_id)
 
     @commands.command(name="add")
@@ -332,13 +342,13 @@ class TaskManagement(commands.Cog):
                         current_day = channel_data.get("current_day", 0)
                         today_tasks = daily_tasks.get(f"day{current_day}", [])
                         
+                        embed = discord.Embed(
+                            title="📅 Today's Tasks",
+                            description=f"Day {current_day}/{channel_data.get('days', 0)}",
+                            color=discord.Color.blue()
+                        )
+                        
                         if today_tasks:
-                            embed = discord.Embed(
-                                title="📅 Today's Tasks",
-                                description=f"Day {current_day}/{channel_data.get('days', 0)}",
-                                color=discord.Color.blue()
-                            )
-                            
                             tasks_text = ""
                             for task_id in today_tasks:
                                 task = next((t for t in channel_data["tasks"] if t["id"] == task_id), None)
@@ -346,8 +356,11 @@ class TaskManagement(commands.Cog):
                                     status = "✅" if task["completed"] else "❌"
                                     tasks_text += f"{task_id}. {status} {task['name']}\n"
                             
-                            embed.add_field(name="Tasks", value=tasks_text or "No tasks for today", inline=False)
-                            await channel.send(embed=embed)
+                            embed.add_field(name="Tasks", value=tasks_text, inline=False)
+                        else:
+                            embed.add_field(name="Tasks", value="Break day! No tasks for today.", inline=False)
+                            
+                        await channel.send(embed=embed)
 
     @tasks.loop(minutes=1)
     async def evening_check(self):
@@ -379,8 +392,18 @@ class TaskManagement(commands.Cog):
                                     status = "✅" if task["completed"] else "❌"
                                     tasks_text += f"{task_id}. {status} {task['name']}\n"
                             
-                            embed.add_field(name="Today's Tasks", value=tasks_text or "No tasks for today", inline=False)
+                            embed.add_field(name="Today's Tasks", value=tasks_text, inline=False)
                             await channel.send(embed=embed, view=view)
+                        else:
+                            # It's a break day, just advance to the next day
+                            await self.advance_day(channel_id)
+                            
+                            embed = discord.Embed(
+                                title="😌 Break Day Complete",
+                                description="Today was a break day. Moving to the next day.",
+                                color=discord.Color.green()
+                            )
+                            await channel.send(embed=embed)
 
     @daily_reminder.before_loop
     @evening_check.before_loop
@@ -417,10 +440,14 @@ class TaskManagement(commands.Cog):
                 if completed_tasks:
                     completed_text = "\n".join([f"{task['id']}. {task['name']}" for task in completed_tasks])
                     embed.add_field(name="✅ Completed Tasks", value=completed_text, inline=False)
+                else:
+                    embed.add_field(name="✅ Completed Tasks", value="None", inline=False)
                 
                 if incompleted_tasks:
                     incompleted_text = "\n".join([f"{task['id']}. {task['name']}" for task in incompleted_tasks])
                     embed.add_field(name="❌ Incompleted Tasks", value=incompleted_text, inline=False)
+                else:
+                    embed.add_field(name="❌ Incompleted Tasks", value="None", inline=False)
                 
                 completion_rate = len(completed_tasks) / len(tasks) * 100 if tasks else 0
                 embed.add_field(name="📈 Completion Rate", value=f"{completion_rate:.1f}%", inline=False)
