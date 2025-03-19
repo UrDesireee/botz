@@ -17,14 +17,14 @@ class TikTokTracker(commands.Cog):
                 'name': 'Desi',
                 'initial_followers': 5,
                 'initial_likes': 2485,
-                'image_url': 'https://p16-pu-sign-no.tiktokcdn-eu.com/tos-no1a-avt-0068c001-no/68e1ce84651df415b90fc7f913ae6bd2~tplv-tiktokx-cropcenter:1080:1080.jpeg?dr=10399&refresh_token=c04f5428&x-expires=1742230800&x-signature=Yd92D900uBeTU5uj3OjnpphdC3g%3D&t=4d5b0474&ps=13740610&shp=a5d48078&shcp=81f88b70&idc=no1a'  # Replace with actual image URL
+                'image_url': 'https://p16-pu-sign-no.tiktokcdn-eu.com/tos-no1a-avt-0068c001-no/68e1ce84651df415b90fc7f913ae6bd2~tplv-tiktokx-cropcenter:1080:1080.jpeg?dr=10399&refresh_token=2274c74a&x-expires=1742569200&x-signature=OFs2Rs878s0Y5kXkK7iPD%2BHFP%2Fw%3D&t=4d5b0474&ps=13740610&shp=a5d48078&shcp=81f88b70&idc=no1a'  # Replace with actual image URL
             },
             'kawaii.style': {
-                'url': 'https://www.tiktok.com/@kawaii.style',
+                'url': 'https://www.tiktok.com/@bunny_desire',
                 'name': 'Bunny',
                 'initial_followers': 1,
                 'initial_likes': 10,
-                'image_url': 'https://p16-pu-sign-no.tiktokcdn-eu.com/tos-no1a-avt-0068c001-no/a9c500d07d08b141b806b33ac6f70a61~tplv-tiktokx-cropcenter:1080:1080.jpeg?dr=10399&refresh_token=a3cbaa28&x-expires=1742230800&x-signature=%2FJHbSLe%2BNPK7EpDOa9tNpiPME1w%3D&t=4d5b0474&ps=13740610&shp=a5d48078&shcp=81f88b70&idc=no1a'  # Replace with actual image URL
+                'image_url': 'https://p16-pu-sign-no.tiktokcdn-eu.com/obj/tos-no1a-avt-0068c001-no/7196b6b098b6bf8dac8f0885807981dd?lk3s=1a13ec60&nonce=16782&refresh_token=7c1ddc579cef9ab87e3a58c141221532&x-expires=1742482800&x-signature=uVftlGCnuysYS%2FcTF3Xn6gl59Oo%3D&shp=1a13ec60&shcp=-'  # Replace with actual image URL
             }
         }
         self.CHALLENGE_END = datetime(2025, 3, 22, 17, 0, 0, tzinfo=pytz.timezone('UTC')).astimezone(pytz.timezone('Etc/GMT-1'))
