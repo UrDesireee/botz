@@ -110,7 +110,7 @@ class TaskManagement(commands.Cog):
         # Send initial message
         embed = discord.Embed(
             title="📋 Task Management Setup",
-            description="Give the name of the task or say `!save` to cancel and save.",
+            description="Give the name of the task or say `!save` to continue.",
             color=discord.Color.blue()
         )
         await ctx.send(embed=embed)
@@ -127,16 +127,10 @@ class TaskManagement(commands.Cog):
             setup_data = self.setup_users[user_id]
             channel_id = setup_data["channel_id"]
             
-            # Ignore command messages
-            if message.content.startswith('!'):
-                return
-            
-            # Check if the user is in task input stage
-            if setup_data["stage"] == "tasks":
-                content = message.content.strip()
-                
-                if content.lower() == "!save":
-                    # Move to the next stage
+            # Check if the message is !save command
+            if message.content.strip().lower() == "!save":
+                # If in tasks stage, move to days stage
+                if setup_data["stage"] == "tasks":
                     setup_data["stage"] = "days"
                     self.setup_users[user_id] = setup_data
                     
@@ -146,22 +140,31 @@ class TaskManagement(commands.Cog):
                         color=discord.Color.blue()
                     )
                     await message.channel.send(embed=embed)
-                else:
-                    # Add the task
-                    task_id = len(self.tasks_data[str(channel_id)]["tasks"]) + 1
-                    self.tasks_data[str(channel_id)]["tasks"].append({
-                        "name": content,
-                        "completed": False,
-                        "id": task_id
-                    })
-                    save_tasks(self.tasks_data)
-                    
-                    embed = discord.Embed(
-                        title="✅ Task Added",
-                        description=f"Task `{content}` added. Add another task or say `!save` to continue.",
-                        color=discord.Color.green()
-                    )
-                    await message.channel.send(embed=embed)
+                return
+            
+            # Ignore other command messages
+            if message.content.startswith('!'):
+                return
+            
+            # Check if the user is in task input stage
+            if setup_data["stage"] == "tasks":
+                content = message.content.strip()
+                
+                # Add the task
+                task_id = len(self.tasks_data[str(channel_id)]["tasks"]) + 1
+                self.tasks_data[str(channel_id)]["tasks"].append({
+                    "name": content,
+                    "completed": False,
+                    "id": task_id
+                })
+                save_tasks(self.tasks_data)
+                
+                embed = discord.Embed(
+                    title="✅ Task Added",
+                    description=f"Task `{content}` added. Add another task or say `!save` to continue.",
+                    color=discord.Color.green()
+                )
+                await message.channel.send(embed=embed)
             
             # Check if the user is in days input stage
             elif setup_data["stage"] == "days":
@@ -328,6 +331,48 @@ class TaskManagement(commands.Cog):
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
+
+    @commands.command(name="clear")
+    async def clear_tasks(self, ctx):
+        """Clear all tasks and reset the task management for the channel"""
+        channel_id = str(ctx.channel.id)
+        
+        if channel_id not in self.tasks_data:
+            embed = discord.Embed(
+                title="❌ Error",
+                description="No tasks found for this channel.",
+                color=discord.Color.red()
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Reset all data for this channel
+        self.tasks_data[channel_id] = {
+            "tasks": [],
+            "days": 0,
+            "setup_mode": False,
+            "daily_tasks": {},
+            "current_day": 0,
+            "start_date": None
+        }
+        save_tasks(self.tasks_data)
+        
+        # Remove any users in setup mode for this channel
+        users_to_remove = []
+        for user_id, setup_data in self.setup_users.items():
+            if setup_data["channel_id"] == channel_id:
+                users_to_remove.append(user_id)
+        
+        for user_id in users_to_remove:
+            if user_id in self.setup_users:
+                del self.setup_users[user_id]
+        
+        embed = discord.Embed(
+            title="🧹 Tasks Cleared",
+            description="All tasks and settings have been cleared for this channel.",
+            color=discord.Color.green()
+        )
+        await ctx.send(embed=embed)
 
     @tasks.loop(minutes=1)
     async def daily_reminder(self):
