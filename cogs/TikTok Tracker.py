@@ -255,23 +255,10 @@ class TikTokTracker(commands.Cog):
 
         return embed
 
-@commands.command(name="goals")
+    @commands.command(name="goals")
     async def show_goals(self, ctx, category=None, page: int = 0):
         """Command to display goals with optional category and pagination"""
         try:
-            # Determine total pages based on category or all goals
-            if category:
-                category_goals = self.goals.get(category, [])
-                total_pages = (len(category_goals) + 9) // 10  # Ceiling division
-            else:
-                all_goals = []
-                for cat_goals in self.goals.values():
-                    all_goals.extend(cat_goals)
-                total_pages = (len(all_goals) + 9) // 10  # Ceiling division
-            
-            # Ensure page is within bounds
-            page = max(0, min(page, total_pages - 1))
-            
             embed = self.create_goals_embed(page, category)
             
             # Create a view with buttons
@@ -280,45 +267,20 @@ class TikTokTracker(commands.Cog):
             async def prev_callback(interaction: discord.Interaction):
                 new_page = max(0, page - 1)
                 new_embed = self.create_goals_embed(new_page, category)
-                
-                # Update view with new page
-                new_view = self.create_pagination_view(new_page, category, total_pages)
-                await interaction.response.edit_message(embed=new_embed, view=new_view)
+                await interaction.response.edit_message(embed=new_embed)
 
             async def next_callback(interaction: discord.Interaction):
-                new_page = min(total_pages - 1, page + 1)
+                new_page = page + 1
                 new_embed = self.create_goals_embed(new_page, category)
-                
-                # Update view with new page
-                new_view = self.create_pagination_view(new_page, category, total_pages)
-                await interaction.response.edit_message(embed=new_embed, view=new_view)
+                await interaction.response.edit_message(embed=new_embed)
 
-            def create_pagination_view(self, current_page, category, total_pages):
-                """Create a view with pagination buttons"""
-                view = discord.ui.View()
-                
-                # Previous button
-                prev_button = discord.ui.Button(label="◀️ Previous", style=discord.ButtonStyle.gray, disabled=(current_page == 0))
-                prev_button.callback = prev_callback
-                view.add_item(prev_button)
-                
-                # Page indicator button
-                page_button = discord.ui.Button(
-                    label=f"Page {current_page + 1}/{total_pages}", 
-                    style=discord.ButtonStyle.blurple, 
-                    disabled=True
-                )
-                view.add_item(page_button)
-                
-                # Next button
-                next_button = discord.ui.Button(label="Next ▶️", style=discord.ButtonStyle.gray, disabled=(current_page == total_pages - 1))
-                next_button.callback = next_callback
-                view.add_item(next_button)
-                
-                return view
+            prev_button = discord.ui.Button(label="Previous", style=discord.ButtonStyle.gray)
+            prev_button.callback = prev_callback
+            view.add_item(prev_button)
 
-            # Initial view
-            view = self.create_pagination_view(page, category, total_pages)
+            next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.gray)
+            next_button.callback = next_callback
+            view.add_item(next_button)
 
             await ctx.send(embed=embed, view=view)
         except Exception as e:
