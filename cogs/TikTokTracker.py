@@ -246,10 +246,23 @@ class TikTokTracker(commands.Cog):
     
     @commands.command(name="tiktok")
     async def tiktok_stats(self, ctx):
-        """Command to display TikTok stats"""
+        """Command to display TikTok stats with enhanced error handling"""
         await ctx.trigger_typing()
+    
+        # Check API credentials first
+        if not self.client_key or not self.client_secret:
+            await ctx.send("❌ TikTok API credentials are missing!")
+            return
+    
+        # Try to get access token
+        access_token = self.get_access_token()
+        if not access_token:
+            await ctx.send("❌ Failed to obtain TikTok API access token!")
+            return
+    
+        # Fetch stats
         stats = self.fetch_tiktok_stats_api()
-        
+    
         if stats:
             embed = discord.Embed(
                 title=f"🔴 TikTok Stats for @{self.tiktok_username}",
@@ -260,7 +273,7 @@ class TikTokTracker(commands.Cog):
             embed.add_field(name="📹 Video Count", value=f"{stats['views']:,}", inline=True)
             await ctx.send(embed=embed)
         else:
-            await ctx.send("Failed to fetch TikTok stats. API might be down.")
+            await ctx.send("❌ Failed to fetch TikTok stats. Check API configuration and credentials.")
     
     def create_goals_embed(self, page=0):
         """Creates paginated embed for goals"""
@@ -327,6 +340,16 @@ class TikTokTracker(commands.Cog):
             return new_view
         
         await ctx.send(embed=embed, view=create_buttons())
+
+    @commands.command(name="test_tiktok_token")
+    async def test_tiktok_token(self, ctx):
+        """Manually test TikTok API token generation"""
+        token = self.get_access_token()
+    
+        if token:
+            await ctx.send(f"Token successfully generated! First 10 chars: {token[:10]}...")
+        else:
+            await ctx.send("Failed to generate token. Check console for details.")
 
     @commands.command(name="update_goals")
     async def update_goals(self, ctx):
