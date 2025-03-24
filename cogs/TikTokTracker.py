@@ -46,7 +46,7 @@ class TikTokTracker(commands.Cog):
     
     def create_goals_embed(self, page=0):
         """Creates paginated embed for goals"""
-                self.goals = {
+        self.goals = {
             "Followers": [
                 # Beginner Milestones
                 {"current": 0, "total": 10, "description": "First 10 Followers"},
@@ -174,8 +174,14 @@ class TikTokTracker(commands.Cog):
             ]
         }
 
+        # Flatten goals into a single list
+        goals = (
+            self.goals["Followers"] + 
+            self.goals["Likes"] + 
+            self.goals["Views"]
+        )
         
-        items_per_page = 2
+        items_per_page = 10
         total_pages = (len(goals) - 1) // items_per_page + 1
         start_index = page * items_per_page
         goals_to_show = goals[start_index:start_index + items_per_page]
@@ -200,7 +206,6 @@ class TikTokTracker(commands.Cog):
     async def show_goals(self, ctx, page: int = 0):
         """Command to display paginated goals"""
         embed, total_pages = self.create_goals_embed(page)
-        view = discord.ui.View()
         
         async def prev_callback(interaction: discord.Interaction):
             nonlocal page
