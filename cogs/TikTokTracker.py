@@ -148,49 +148,54 @@ class TikTokTracker(commands.Cog):
             
             # Use headers to mimic a browser request
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
             }
             
-            # Fetch the page
-            response = requests.get(url, headers=headers)
-            
-            if response.status_code != 200:
-                return None
-            
-            # Use BeautifulSoup to parse the HTML
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Try to extract stats (this might need adjustment based on TikTok's current HTML structure)
-            stats_elements = soup.find_all('strong', class_='count-number')
-            
-            if len(stats_elements) < 3:
-                return None
-            
-            # Extract followers, following, and likes
-            followers = stats_elements[0].text.replace(',', '')
-            following = stats_elements[1].text.replace(',', '')
-            likes = stats_elements[2].text.replace(',', '')
-            
-            # Convert to integers
-            followers = int(followers)
-            following = int(following)
-            likes = int(likes)
-            
-            return {
-                "followers": followers,
-                "following": following,
-                "total_likes": likes,
-                "total_views": 0,  # Web scraping might not get views easily
-                "last_video": {
-                    "likes": 0,
-                    "comments": 0,
-                    "shares": 0
+            # Use a more robust requests session
+            with requests.Session() as session:
+                response = session.get(url, headers=headers, timeout=10)
+                
+                if response.status_code != 200:
+                    print(f"Failed to fetch stats. Status code: {response.status_code}")
+                    return None
+                
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # More robust stat extraction
+                followers_elem = soup.find('strong', {'title': 'Followers'})
+                likes_elem = soup.find('strong', {'title': 'Likes'})
+                
+                if not (followers_elem and likes_elem):
+                    print("Could not find stat elements")
+                    return None
+                
+                followers = self.parse_number(followers_elem.text)
+                likes = self.parse_number(likes_elem.text)
+                
+                return {
+                    "followers": followers,
+                    "total_likes": likes,
+                    "total_views": 0,  # Web scraping might not easily get views
                 }
-            }
         
         except Exception as e:
             print(f"Error fetching TikTok stats: {e}")
             return None
+
+    def parse_number(self, num_str):
+        """Parse number string with K, M, B suffixes"""
+        num_str = num_str.replace(',', '')
+        try:
+            if num_str.endswith('K'):
+                return int(float(num_str[:-1]) * 1000)
+            elif num_str.endswith('M'):
+                return int(float(num_str[:-1]) * 1000000)
+            elif num_str.endswith('B'):
+                return int(float(num_str[:-1]) * 1000000000)
+            return int(num_str)
+        except ValueError:
+            return 0
 
     def create_stats_embed(self, stats):
         """Create an embed with TikTok account statistics"""
@@ -201,7 +206,6 @@ class TikTokTracker(commands.Cog):
         )
         
         embed.add_field(name="👥 Followers", value=f"{stats['followers']:,}", inline=True)
-        embed.add_field(name="👀 Following", value=f"{stats['following']:,}", inline=True)
         embed.add_field(name="❤️ Total Likes", value=f"{stats['total_likes']:,}", inline=True)
 
         embed.set_footer(text="Stats fetched via web scraping")
@@ -223,29 +227,31 @@ class TikTokTracker(commands.Cog):
         except Exception as e:
             await ctx.send(f"An error occurred: {str(e)}")
 
-    def create_goals_embed(self, page=0, category=None):
-        """Create an embed showing goals with pagination"""
-        if category:
-            # Filter goals for specific category
-            category_goals = self.goals.get(category, [])
-            goals_to_show = category_goals[page*10:(page+1)*10]
-        else:
-            # Default to showing all categories
-            all_goals = []
-            for cat_goals in self.goals.values():
-                all_goals.extend(cat_goals)
-            goals_to_show = all_goals[page*10:(page+1)*10]
+    def create_goals_embed(self, page=0):
+        """Create an embed showing all goals with pagination"""
+        # Flatten all goals from all categories
+        all_goals = []
+        for category, goals in self.goals.items():
+            for goal in goals:
+                goal['category'] = category  # Add category information
+                all_goals.append(goal)
+
+        # Pagination
+        items_per_page = 5
+        total_pages = (len(all_goals) - 1) // items_per_page + 1
+        start_index = page * items_per_page
+        goals_to_show = all_goals[start_index:start_index + items_per_page]
 
         embed = discord.Embed(
             title="🏆 Comprehensive TikTok Goals",
-            description="Tracking progress across multiple milestones",
+            description=f"Tracking progress across all categories (Page {page + 1}/{total_pages})",
             color=discord.Color.gold()
         )
 
         for goal in goals_to_show:
             progress = min(100, (goal['current'] / goal['total']) * 100)
             embed.add_field(
-                name=f"🎯 {goal['description']}",
+                name=f"🎯 {goal['description']} ({goal['category']})",
                 value=(
                     f"Progress: {progress:.2f}%\n"
                     f"{goal['current']:,} / {goal['total']:,}"
@@ -253,32 +259,38 @@ class TikTokTracker(commands.Cog):
                 inline=False
             )
 
-        return embed
+        return embed, total_pages
 
     @commands.command(name="goals")
-    async def show_goals(self, ctx, category=None, page: int = 0):
-        """Command to display goals with optional category and pagination"""
+    async def show_goals(self, ctx, page: int = 0):
+        """Command to display all goals with pagination"""
         try:
-            embed = self.create_goals_embed(page, category)
+            embed, total_pages = self.create_goals_embed(page)
             
             # Create a view with buttons
             view = discord.ui.View()
             
             async def prev_callback(interaction: discord.Interaction):
                 new_page = max(0, page - 1)
-                new_embed = self.create_goals_embed(new_page, category)
-                await interaction.response.edit_message(embed=new_embed)
+                new_embed, _ = self.create_goals_embed(new_page)
+                await interaction.response.edit_message(embed=new_embed, view=view)
 
             async def next_callback(interaction: discord.Interaction):
-                new_page = page + 1
-                new_embed = self.create_goals_embed(new_page, category)
-                await interaction.response.edit_message(embed=new_embed)
+                new_page = min(total_pages - 1, page + 1)
+                new_embed, _ = self.create_goals_embed(new_page)
+                await interaction.response.edit_message(embed=new_embed, view=view)
 
-            prev_button = discord.ui.Button(label="Previous", style=discord.ButtonStyle.gray)
+            # Previous button
+            prev_button = discord.ui.Button(label="Previous", style=discord.ButtonStyle.gray, disabled=(page == 0))
             prev_button.callback = prev_callback
             view.add_item(prev_button)
 
-            next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.gray)
+            # Page indicator button
+            page_button = discord.ui.Button(label=f"Page {page + 1}/{total_pages}", style=discord.ButtonStyle.blurple, disabled=True)
+            view.add_item(page_button)
+
+            # Next button
+            next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.gray, disabled=(page == total_pages - 1))
             next_button.callback = next_callback
             view.add_item(next_button)
 
