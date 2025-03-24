@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
-from TikTokApi import TikTokApi
+import requests
+from bs4 import BeautifulSoup
 import asyncio
 import os
 from dotenv import load_dotenv
@@ -140,36 +141,53 @@ class TikTokTracker(commands.Cog):
         }
 
     async def fetch_tiktok_stats(self):
-        """Fetch TikTok account statistics"""
+        """Fetch TikTok account statistics using web scraping"""
         try:
-            async with TikTokApi() as api:
-                user = await api.user(username=self.tiktok_username)
-                stats = await user.info()
-                
-                last_video = await user.videos(count=1)
-                last_video_stats = last_video[0] if last_video else None
-
-                # Update goals
-                for category in ['Followers', 'Likes', 'Views']:
-                    for goal in self.goals[category]:
-                        if category == 'Followers':
-                            goal['current'] = stats.follower_count
-                        elif category == 'Likes':
-                            goal['current'] = stats.total_favorited
-                        elif category == 'Views':
-                            goal['current'] = stats.total_view_count
-
-                return {
-                    "followers": stats.follower_count,
-                    "following": stats.following_count,
-                    "total_likes": stats.total_favorited,
-                    "total_views": stats.total_view_count,
-                    "last_video": {
-                        "likes": last_video_stats.stats.digg_count if last_video_stats else 0,
-                        "comments": last_video_stats.stats.comment_count if last_video_stats else 0,
-                        "shares": last_video_stats.stats.share_count if last_video_stats else 0
-                    }
+            # Use a TikTok stats proxy service or web scraping
+            url = f"https://www.tiktok.com/@{self.tiktok_username}"
+            
+            # Use headers to mimic a browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            # Fetch the page
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code != 200:
+                return None
+            
+            # Use BeautifulSoup to parse the HTML
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Try to extract stats (this might need adjustment based on TikTok's current HTML structure)
+            stats_elements = soup.find_all('strong', class_='count-number')
+            
+            if len(stats_elements) < 3:
+                return None
+            
+            # Extract followers, following, and likes
+            followers = stats_elements[0].text.replace(',', '')
+            following = stats_elements[1].text.replace(',', '')
+            likes = stats_elements[2].text.replace(',', '')
+            
+            # Convert to integers
+            followers = int(followers)
+            following = int(following)
+            likes = int(likes)
+            
+            return {
+                "followers": followers,
+                "following": following,
+                "total_likes": likes,
+                "total_views": 0,  # Web scraping might not get views easily
+                "last_video": {
+                    "likes": 0,
+                    "comments": 0,
+                    "shares": 0
                 }
+            }
+        
         except Exception as e:
             print(f"Error fetching TikTok stats: {e}")
             return None
@@ -178,46 +196,16 @@ class TikTokTracker(commands.Cog):
         """Create an embed with TikTok account statistics"""
         embed = discord.Embed(
             title=f"🔴 TikTok Stats for @{self.tiktok_username}",
-            color=discord.Color.red()
+            color=discord.Color.red(),
+            description="Note: Stats are approximated and may not be real-time"
         )
         
         embed.add_field(name="👥 Followers", value=f"{stats['followers']:,}", inline=True)
+        embed.add_field(name="👀 Following", value=f"{stats['following']:,}", inline=True)
         embed.add_field(name="❤️ Total Likes", value=f"{stats['total_likes']:,}", inline=True)
-        embed.add_field(name="👀 Total Views", value=f"{stats['total_views']:,}", inline=True)
 
-        if stats['last_video']:
-            embed.add_field(name="📹 Last Video Stats", value=(
-                f"Likes: {stats['last_video']['likes']:,}\n"
-                f"Comments: {stats['last_video']['comments']:,}\n"
-                f"Shares: {stats['last_video']['shares']:,}"
-            ), inline=False)
-
-        # Add progress for top 5 closest goals for each category
-        categories = ['Followers', 'Likes', 'Views']
-        for category in categories:
-            # Sort goals and find closest goals
-            sorted_goals = sorted(
-                self.goals[category], 
-                key=lambda x: abs(x['total'] - stats[f'total_{category.lower()}'])
-            )
-            
-            # Take top 5 closest goals
-            top_goals = sorted_goals[:5]
-            
-            category_embed_text = ""
-            for goal in top_goals:
-                progress = min(100, (stats[f'total_{category.lower()}'] / goal['total']) * 100)
-                category_embed_text += (
-                    f"🎯 {goal['description']}: "
-                    f"{progress:.2f}% ({stats[f'total_{category.lower()}']:,}/{goal['total']:,})\n"
-                )
-            
-            embed.add_field(
-                name=f"🏆 Top {category} Goals",
-                value=category_embed_text,
-                inline=False
-            )
-
+        embed.set_footer(text="Stats fetched via web scraping")
+        
         return embed
 
     @commands.command(name="tiktok")
@@ -231,7 +219,7 @@ class TikTokTracker(commands.Cog):
                 embed = self.create_stats_embed(stats)
                 await ctx.send(embed=embed)
             else:
-                await ctx.send("Sorry, could not fetch TikTok statistics.")
+                await ctx.send("Sorry, could not fetch TikTok statistics. The profile might be private or the scraping method outdated.")
         except Exception as e:
             await ctx.send(f"An error occurred: {str(e)}")
 
@@ -267,10 +255,23 @@ class TikTokTracker(commands.Cog):
 
         return embed
 
-    @commands.command(name="goals")
+@commands.command(name="goals")
     async def show_goals(self, ctx, category=None, page: int = 0):
         """Command to display goals with optional category and pagination"""
         try:
+            # Determine total pages based on category or all goals
+            if category:
+                category_goals = self.goals.get(category, [])
+                total_pages = (len(category_goals) + 9) // 10  # Ceiling division
+            else:
+                all_goals = []
+                for cat_goals in self.goals.values():
+                    all_goals.extend(cat_goals)
+                total_pages = (len(all_goals) + 9) // 10  # Ceiling division
+            
+            # Ensure page is within bounds
+            page = max(0, min(page, total_pages - 1))
+            
             embed = self.create_goals_embed(page, category)
             
             # Create a view with buttons
@@ -279,20 +280,45 @@ class TikTokTracker(commands.Cog):
             async def prev_callback(interaction: discord.Interaction):
                 new_page = max(0, page - 1)
                 new_embed = self.create_goals_embed(new_page, category)
-                await interaction.response.edit_message(embed=new_embed)
+                
+                # Update view with new page
+                new_view = self.create_pagination_view(new_page, category, total_pages)
+                await interaction.response.edit_message(embed=new_embed, view=new_view)
 
             async def next_callback(interaction: discord.Interaction):
-                new_page = page + 1
+                new_page = min(total_pages - 1, page + 1)
                 new_embed = self.create_goals_embed(new_page, category)
-                await interaction.response.edit_message(embed=new_embed)
+                
+                # Update view with new page
+                new_view = self.create_pagination_view(new_page, category, total_pages)
+                await interaction.response.edit_message(embed=new_embed, view=new_view)
 
-            prev_button = discord.ui.Button(label="Previous", style=discord.ButtonStyle.gray)
-            prev_button.callback = prev_callback
-            view.add_item(prev_button)
+            def create_pagination_view(self, current_page, category, total_pages):
+                """Create a view with pagination buttons"""
+                view = discord.ui.View()
+                
+                # Previous button
+                prev_button = discord.ui.Button(label="◀️ Previous", style=discord.ButtonStyle.gray, disabled=(current_page == 0))
+                prev_button.callback = prev_callback
+                view.add_item(prev_button)
+                
+                # Page indicator button
+                page_button = discord.ui.Button(
+                    label=f"Page {current_page + 1}/{total_pages}", 
+                    style=discord.ButtonStyle.blurple, 
+                    disabled=True
+                )
+                view.add_item(page_button)
+                
+                # Next button
+                next_button = discord.ui.Button(label="Next ▶️", style=discord.ButtonStyle.gray, disabled=(current_page == total_pages - 1))
+                next_button.callback = next_callback
+                view.add_item(next_button)
+                
+                return view
 
-            next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.gray)
-            next_button.callback = next_callback
-            view.add_item(next_button)
+            # Initial view
+            view = self.create_pagination_view(page, category, total_pages)
 
             await ctx.send(embed=embed, view=view)
         except Exception as e:
