@@ -3,6 +3,11 @@ from discord.ext import commands
 import requests
 from dotenv import load_dotenv
 import os
+import time
+import hashlib
+import hmac
+import base64
+import uuid
 
 load_dotenv()
 
@@ -10,42 +15,10 @@ class TikTokTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.tiktok_username = "bunny_desiree"
-        self.api_key = os.getenv("TIKTOK_API_KEY")  # Load API Key from .env
-
-    def fetch_tiktok_stats_api(self):
-        """Fetch TikTok stats using an API (preferred method)"""
-        url = f"https://api.tiktok.com/user/{self.tiktok_username}"  # Replace with real API URL
-        headers = {"Authorization": f"Bearer {self.api_key}"}
+        self.client_key = os.getenv("TIKTOK_CLIENT_KEY")
+        self.client_secret = os.getenv("TIKTOK_CLIENT_SECRET")
         
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                "followers": data.get("follower_count", 0),
-                "likes": data.get("total_likes", 0),
-                "views": data.get("video_views", 0)
-            }
-        return None
-    
-    @commands.command(name="tiktok")
-    async def tiktok_stats(self, ctx):
-        """Command to display TikTok stats"""
-        await ctx.trigger_typing()
-        stats = self.fetch_tiktok_stats_api()
-        
-        if stats:
-            embed = discord.Embed(
-                title=f"🔴 TikTok Stats for @{self.tiktok_username}",
-                color=discord.Color.red()
-            )
-            embed.add_field(name="👥 Followers", value=f"{stats['followers']:,}", inline=True)
-            embed.add_field(name="❤️ Likes", value=f"{stats['likes']:,}", inline=True)
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send("Failed to fetch TikTok stats. API might be down.")
-    
-    def create_goals_embed(self, page=0):
-        """Creates paginated embed for goals"""
+        # Initialize goals dictionary
         self.goals = {
             "Followers": [
                 # Beginner Milestones
@@ -173,7 +146,124 @@ class TikTokTracker(commands.Cog):
                 {"current": 0, "total": 1000000000, "description": "One Billion Views"}
             ]
         }
-
+        
+    def generate_auth_params(self):
+        """Generate authorization parameters for TikTok API"""
+        timestamp = str(int(time.time()))
+        nonce = str(uuid.uuid4())
+        
+        # Base parameters
+        params = {
+            'client_key': self.client_key,
+            'timestamp': timestamp,
+            'nonce': nonce
+        }
+        
+        # Sort parameters alphabetically
+        sorted_params = sorted(params.items(), key=lambda x: x[0])
+        
+        # Create signature string
+        signature_string = '&'.join([f"{k}={v}" for k, v in sorted_params])
+        
+        # Create HMAC-SHA256 signature
+        signature = hmac.new(
+            self.client_secret.encode('utf-8'), 
+            signature_string.encode('utf-8'), 
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Add signature to params
+        params['sign'] = signature
+        
+        return params
+    
+    def fetch_tiktok_stats_api(self):
+        """Fetch TikTok stats using the official TikTok Open API"""
+        # Endpoint for user info
+        url = "https://open.tiktokapis.com/v2/user/info/"
+        
+        # Generate authentication parameters
+        auth_params = self.generate_auth_params()
+        
+        # Headers
+        headers = {
+            'Authorization': f'Bearer {self.get_access_token()}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Request body
+        body = {
+            "fields": ["follower_count", "likes_count", "video_count"],
+            "username": self.tiktok_username
+        }
+        
+        try:
+            response = requests.post(url, json=body, headers=headers, params=auth_params)
+            
+            # Check if request was successful
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Extract user statistics
+                user_data = data.get('data', {}).get('user', {})
+                return {
+                    "followers": user_data.get('follower_count', 0),
+                    "likes": user_data.get('likes_count', 0),
+                    "views": user_data.get('video_count', 0)  # Note: this might not be total views
+                }
+            else:
+                print(f"API Error: {response.status_code} - {response.text}")
+                return None
+        
+        except Exception as e:
+            print(f"Error fetching TikTok stats: {e}")
+            return None
+    
+    def get_access_token(self):
+        """Obtain access token from TikTok OAuth"""
+        token_url = "https://open.tiktokapis.com/v2/oauth/token/"
+        
+        # Prepare token request parameters
+        data = {
+            'client_key': self.client_key,
+            'client_secret': self.client_secret,
+            'grant_type': 'client_credentials'
+        }
+        
+        try:
+            response = requests.post(token_url, json=data)
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                return token_data.get('access_token')
+            else:
+                print(f"Token Error: {response.status_code} - {response.text}")
+                return None
+        
+        except Exception as e:
+            print(f"Error obtaining access token: {e}")
+            return None
+    
+    @commands.command(name="tiktok")
+    async def tiktok_stats(self, ctx):
+        """Command to display TikTok stats"""
+        await ctx.trigger_typing()
+        stats = self.fetch_tiktok_stats_api()
+        
+        if stats:
+            embed = discord.Embed(
+                title=f"🔴 TikTok Stats for @{self.tiktok_username}",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="👥 Followers", value=f"{stats['followers']:,}", inline=True)
+            embed.add_field(name="❤️ Likes", value=f"{stats['likes']:,}", inline=True)
+            embed.add_field(name="📹 Video Count", value=f"{stats['views']:,}", inline=True)
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send("Failed to fetch TikTok stats. API might be down.")
+    
+    def create_goals_embed(self, page=0):
+        """Creates paginated embed for goals"""
         # Flatten goals into a single list
         goals = (
             self.goals["Followers"] + 
@@ -237,6 +327,28 @@ class TikTokTracker(commands.Cog):
             return new_view
         
         await ctx.send(embed=embed, view=create_buttons())
+
+    @commands.command(name="update_goals")
+    async def update_goals(self, ctx):
+        """Update goals based on current TikTok stats"""
+        stats = self.fetch_tiktok_stats_api()
+        
+        if stats:
+            # Update goals for Followers
+            for goal in self.goals["Followers"]:
+                goal['current'] = min(stats['followers'], goal['total'])
+            
+            # Update goals for Likes
+            for goal in self.goals["Likes"]:
+                goal['current'] = min(stats['likes'], goal['total'])
+            
+            # Update goals for Views
+            for goal in self.goals["Views"]:
+                goal['current'] = min(stats['views'], goal['total'])
+            
+            await ctx.send("Goals have been updated based on current TikTok stats!")
+        else:
+            await ctx.send("Failed to update goals. Could not fetch TikTok stats.")
 
 async def setup(bot):
     await bot.add_cog(TikTokTracker(bot))
