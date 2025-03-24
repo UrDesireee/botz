@@ -7,3 +7,4 @@ aiohttp>=3.8.1
 asyncio>=3.4.3
 datetime>=4.4
 python-dateutil>=2.8.2
+TikTokApi>=5.2.0
