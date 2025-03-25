@@ -1,5 +1,7 @@
 import discord
 from discord.ext import commands
+import aiohttp
+from bs4 import BeautifulSoup
 import asyncio
 from typing import List, Dict
 import random
@@ -57,15 +59,46 @@ class TikTokTracker(commands.Cog):
 
     async def fetch_tiktok_stats(self):
         """
-        Simulate TikTok stats fetching. 
-        In a real-world scenario, you'd replace this with an actual API call.
+        Fetch TikTok stats using web scraping
         """
-        return {
-            "followers": 8452,
-            "following": 315,
-            "likes": 187654,
-            "video_count": 127
-        }
+        url = f"https://www.tiktok.com/@{self.username}"
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }) as response:
+                    if response.status != 200:
+                        return {
+                            "followers": "N/A",
+                            "following": "N/A",
+                            "likes": "N/A",
+                            "video_count": "N/A"
+                        }
+                    
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    # Note: These selectors are hypothetical and would need to be updated 
+                    # based on actual TikTok HTML structure
+                    followers = soup.select_one('strong[title="Followers"]')
+                    likes = soup.select_one('strong[title="Likes"]')
+                    video_count = soup.select_one('strong[title="Videos"]')
+                    
+                    return {
+                        "followers": followers.text.strip() if followers else "N/A",
+                        "following": "N/A",
+                        "likes": likes.text.strip() if likes else "N/A",
+                        "video_count": video_count.text.strip() if video_count else "N/A"
+                    }
+        except Exception as e:
+            print(f"Error fetching TikTok stats: {e}")
+            return {
+                "followers": "Error",
+                "following": "Error",
+                "likes": "Error",
+                "video_count": "Error"
+            }
 
     @commands.command()
     async def tiktok(self, ctx):
@@ -79,9 +112,9 @@ class TikTokTracker(commands.Cog):
         )
         
         # Add stats fields
-        embed.add_field(name="📊 Followers", value=f"{stats['followers']:,}", inline=True)
-        embed.add_field(name="❤️ Total Likes", value=f"{stats['likes']:,}", inline=True)
-        embed.add_field(name="📹 Video Count", value=f"{stats['video_count']:,}", inline=True)
+        embed.add_field(name="📊 Followers", value=f"{stats['followers']}", inline=True)
+        embed.add_field(name="❤️ Total Likes", value=f"{stats['likes']}", inline=True)
+        embed.add_field(name="📹 Video Count", value=f"{stats['video_count']}", inline=True)
         
         # Find and display suggested goal
         suggested_goal = max(
@@ -100,18 +133,17 @@ class TikTokTracker(commands.Cog):
 
     @commands.command()
     async def goals(self, ctx):
-        # Create pages manually without external menu library
+        # Pagination setup
         items_per_page = 10
         total_pages = (len(self.goals) + items_per_page - 1) // items_per_page
         current_page = 0
 
-        while True:
-            # Calculate start and end indices for current page
-            start = current_page * items_per_page
+        # Create initial embed
+        def create_embed(page):
+            start = page * items_per_page
             end = start + items_per_page
             page_goals = self.goals[start:end]
 
-            # Create embed for current page
             embed = discord.Embed(
                 title="🌈 TikTok Goals Dashboard 🌈", 
                 color=discord.Color.from_rgb(186, 85, 211)  # Medium Orchid
@@ -124,36 +156,53 @@ class TikTokTracker(commands.Cog):
                     inline=False
                 )
             
-            # Add page navigation
-            embed.set_footer(text=f"Page {current_page + 1}/{total_pages}")
+            return embed
 
-            # Send or edit message
-            if current_page == 0:
-                message = await ctx.send(embed=embed)
-                await message.add_reaction('➡️')
-                await message.add_reaction('⬅️')
-            else:
-                await message.edit(embed=embed)
+        # Create view with buttons
+        class GoalsView(discord.ui.View):
+            def __init__(self, ctx, total_pages):
+                super().__init__()
+                self.ctx = ctx
+                self.current_page = 0
+                self.total_pages = total_pages
 
-            # Wait for reaction
-            def check(reaction, user):
-                return user == ctx.author and str(reaction.emoji) in ['➡️', '⬅️'] and reaction.message.id == message.id
+            @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary)
+            async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if self.current_page > 0:
+                    self.current_page -= 1
+                    embed = create_embed(self.current_page)
+                    self.update_buttons()
+                    await interaction.response.edit_message(embed=embed, view=self)
 
-            try:
-                reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
+            @discord.ui.button(label="Page", style=discord.ButtonStyle.primary, disabled=True)
+            async def page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                # This button shows current page and total pages
+                pass
 
-                # Remove user's reaction
-                await message.remove_reaction(reaction, user)
+            @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
+            async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+                if self.current_page < self.total_pages - 1:
+                    self.current_page += 1
+                    embed = create_embed(self.current_page)
+                    self.update_buttons()
+                    await interaction.response.edit_message(embed=embed, view=self)
 
-                # Navigate pages
-                if str(reaction.emoji) == '➡️':
-                    current_page = min(current_page + 1, total_pages - 1)
-                elif str(reaction.emoji) == '⬅️':
-                    current_page = max(current_page - 1, 0)
+            def update_buttons(self):
+                # Update page button
+                self.children[1].label = f"Page {self.current_page + 1}/{self.total_pages}"
+                
+                # Disable/enable previous button
+                self.children[0].disabled = (self.current_page == 0)
+                
+                # Disable/enable next button
+                self.children[2].disabled = (self.current_page == self.total_pages - 1)
 
-            except asyncio.TimeoutError:
-                await message.clear_reactions()
-                break
+        # Create and send the view
+        view = GoalsView(ctx, total_pages)
+        view.update_buttons()
+        
+        initial_embed = create_embed(0)
+        await ctx.send(embed=initial_embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(TikTokTracker(bot))
