@@ -10,31 +10,48 @@ class TikTokGoal:
     def __init__(self, description: str, stat_type: str, milestones: List[int]):
         self.description = description
         self.stat_type = stat_type
-        self.milestones = milestones
-        self.current_milestone_index = 0
+        self.milestones = sorted(milestones)
+        self.current_milestone_index = -1
+        self.completed_milestones = []
 
-    def update_progress(self, current_value: int):
-        # Find the highest milestone reached
+    def update_progress(self, current_value: int) -> List[int]:
+        # Track newly achieved milestones
+        newly_achieved = []
+        
+        # Check for new milestones
         for i, milestone in enumerate(self.milestones):
-            if current_value >= milestone:
+            if current_value >= milestone and milestone not in self.completed_milestones:
                 self.current_milestone_index = i
-            else:
-                break
+                self.completed_milestones.append(milestone)
+                newly_achieved.append(milestone)
+        
+        return newly_achieved
 
     def get_current_milestone(self):
-        return self.milestones[self.current_milestone_index]
+        return self.milestones[self.current_milestone_index] if self.current_milestone_index >= 0 else 0
 
     def get_next_milestone(self):
-        return self.milestones[min(self.current_milestone_index + 1, len(self.milestones) - 1)]
+        if self.current_milestone_index >= len(self.milestones) - 1:
+            return None
+        return self.milestones[self.current_milestone_index + 1]
 
     def progress_percentage(self, current_value: int) -> float:
+        # If all milestones are completed
         if self.current_milestone_index >= len(self.milestones) - 1:
             return 100.0
         
+        # If no milestones reached yet
+        if self.current_milestone_index == -1:
+            next_milestone = self.milestones[0]
+            return min(current_value / next_milestone * 100, 100)
+        
+        # Calculate progress between current milestones
         current_milestone = self.get_current_milestone()
         next_milestone = self.get_next_milestone()
         
-        # Calculate progress between current milestones
+        if next_milestone is None:
+            return 100.0
+        
         progress = (current_value - current_milestone) / (next_milestone - current_milestone) * 100
         return min(max(progress, 0), 100)
 
@@ -44,26 +61,56 @@ class TikTokGoal:
         bar = '█' * filled + '░' * (width - filled)
         return f"{bar} {percentage:.1f}%"
 
+    def is_completed(self):
+        return self.current_milestone_index >= len(self.milestones) - 1
+
 class TikTokTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.username = "bunny_desiree"
         self.goals = self._generate_goals()
         self.last_stats = None
+        self.achievement_channel = None  # Set this to a specific channel for achievements
 
     def _generate_goals(self) -> List[TikTokGoal]:
         return [
             TikTokGoal(
                 "Followers Milestones", 
                 "followers", 
-                [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
+                [20, 50, 100, 200, 500, 1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
             ),
             TikTokGoal(
                 "Likes Milestones", 
                 "likes", 
-                [10000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000]
+                [10, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000]
             )
         ]
+
+    async def send_achievement_message(self, goal_type: str, milestone: int):
+        """Send an achievement message to a specific channel"""
+        if not self.achievement_channel:
+            # Try to find a general or announcements channel if not set
+            self.achievement_channel = discord.utils.get(
+                self.bot.get_all_channels(), 
+                name=['achievements', 'announcements', 'general']
+            )
+        
+        if self.achievement_channel:
+            embed = discord.Embed(
+                title="🎉 Goal Achieved! 🎉",
+                description=f"**@{self.username}** just reached {milestone:,} {goal_type}!",
+                color=discord.Color.gold()
+            )
+            embed.add_field(
+                name="Celebration 🎈", 
+                value=f"Congratulations on hitting this amazing milestone! Keep pushing forward to the next goal.",
+                inline=False
+            )
+            
+            try:
+                await self.achievement_channel.send(embed=embed)
+            except Exception as e:
+                print(f"Could not send achievement message: {e}")
 
     async def fetch_tiktok_stats(self):
         """
@@ -92,12 +139,15 @@ class TikTokTracker(commands.Cog):
                     likes_match = re.search(r'(\d+(?:,\d+)*)\s*Likes', html)
                     likes = int(likes_match.group(1).replace(',', '')) if likes_match else 0
                     
-                    # Update goals
+                    # Track achievements
                     for goal in self.goals:
-                        if goal.stat_type == "followers":
-                            goal.update_progress(followers)
-                        elif goal.stat_type == "likes":
-                            goal.update_progress(likes)
+                        newly_achieved = goal.update_progress(
+                            followers if goal.stat_type == "followers" else likes
+                        )
+                        
+                        # Send achievement messages
+                        for milestone in newly_achieved:
+                            await self.send_achievement_message(goal.stat_type, milestone)
                     
                     # Cache stats
                     self.last_stats = {
@@ -127,16 +177,19 @@ class TikTokTracker(commands.Cog):
         
         # Find and display suggested goal
         suggested_goal = max(
-            self.goals, 
-            key=lambda x: x.get_next_milestone()
+            [goal for goal in self.goals if not goal.is_completed()], 
+            key=lambda x: x.get_next_milestone() or 0
         )
         
         # Add suggested goal progress
+        next_milestone = suggested_goal.get_next_milestone()
+        current_value = stats[suggested_goal.stat_type]
+        
         embed.add_field(
             name="🎯 Suggested Goal", 
             value=f"**{suggested_goal.description}**\n"
-                  f"Next target: {suggested_goal.get_next_milestone():,} {suggested_goal.stat_type}\n"
-                  f"{suggested_goal.progress_bar(stats[suggested_goal.stat_type])}",
+                  f"Next target: {next_milestone:,} {suggested_goal.stat_type}\n"
+                  f"{suggested_goal.progress_bar(current_value)}",
             inline=False
         )
         
@@ -156,8 +209,8 @@ class TikTokTracker(commands.Cog):
                 self.current_page = 0
 
             def create_embed(self):
-                goal = self.cog.goals[self.current_page]
                 stats = self.cog.last_stats or {"followers": 0, "likes": 0}
+                goal = self.cog.goals[self.current_page]
                 current_value = stats[goal.stat_type]
 
                 embed = discord.Embed(
@@ -172,21 +225,47 @@ class TikTokTracker(commands.Cog):
                     inline=False
                 )
                 
+                # All milestones with status
+                milestone_status = []
+                for milestone in goal.milestones:
+                    if milestone in goal.completed_milestones:
+                        status = "✅ Completed"
+                    elif milestone > current_value:
+                        status = "🔜 Upcoming"
+                    else:
+                        status = "🟡 In Progress"
+                    
+                    milestone_status.append(f"{milestone:,}: {status}")
+                
                 # Milestone tracking
                 embed.add_field(
                     name="Milestone Progress",
+                    value="\n".join(milestone_status),
+                    inline=False
+                )
+                
+                # Current progress bar
+                embed.add_field(
+                    name="Overall Progress",
                     value=goal.progress_bar(current_value),
                     inline=False
                 )
                 
                 # Next milestone details
                 next_milestone = goal.get_next_milestone()
-                remaining = max(0, next_milestone - current_value)
-                embed.add_field(
-                    name="Next Milestone",
-                    value=f"{next_milestone:,} {goal.stat_type} (Remaining: {remaining:,})",
-                    inline=False
-                )
+                if next_milestone:
+                    remaining = max(0, next_milestone - current_value)
+                    embed.add_field(
+                        name="Next Milestone",
+                        value=f"{next_milestone:,} {goal.stat_type} (Remaining: {remaining:,})",
+                        inline=False
+                    )
+                else:
+                    embed.add_field(
+                        name="Status",
+                        value="🏆 All Milestones Completed!",
+                        inline=False
+                    )
                 
                 return embed
 
