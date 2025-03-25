@@ -177,8 +177,43 @@ class TikTokTracker(commands.Cog):
         
         return params
     
+    def get_access_token(self):
+        """Obtain access token from TikTok OAuth"""
+        token_url = "https://open.tiktokapis.com/v2/oauth/token/"
+        
+        # Prepare token request parameters
+        data = {
+            'client_key': self.client_key,
+            'client_secret': self.client_secret,
+            'grant_type': 'client_credentials'
+        }
+        
+        try:
+            # Use data= instead of json=
+            response = requests.post(token_url, data=data)
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                return token_data.get('access_token')
+            else:
+                print(f"Token Error: {response.status_code} - {response.text}")
+                return None
+        
+        except requests.exceptions.RequestException as e:
+            print(f"Network Error obtaining access token: {e}")
+            return None
+        except ValueError as e:
+            print(f"JSON Parsing Error: {e}")
+            return None
+    
     def fetch_tiktok_stats_api(self):
         """Fetch TikTok stats using the official TikTok Open API"""
+        # First, get access token
+        access_token = self.get_access_token()
+        if not access_token:
+            print("Failed to obtain access token")
+            return None
+        
         # Endpoint for user info
         url = "https://open.tiktokapis.com/v2/user/info/"
         
@@ -187,7 +222,7 @@ class TikTokTracker(commands.Cog):
         
         # Headers
         headers = {
-            'Authorization': f'Bearer {self.get_access_token()}',
+            'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json'
         }
         
@@ -215,33 +250,11 @@ class TikTokTracker(commands.Cog):
                 print(f"API Error: {response.status_code} - {response.text}")
                 return None
         
-        except Exception as e:
-            print(f"Error fetching TikTok stats: {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"Network Error fetching TikTok stats: {e}")
             return None
-    
-    def get_access_token(self):
-        """Obtain access token from TikTok OAuth"""
-        token_url = "https://open.tiktokapis.com/v2/oauth/token/"
-        
-        # Prepare token request parameters
-        data = {
-            'client_key': self.client_key,
-            'client_secret': self.client_secret,
-            'grant_type': 'client_credentials'
-        }
-        
-        try:
-            response = requests.post(token_url, json=data)
-            
-            if response.status_code == 200:
-                token_data = response.json()
-                return token_data.get('access_token')
-            else:
-                print(f"Token Error: {response.status_code} - {response.text}")
-                return None
-        
-        except Exception as e:
-            print(f"Error obtaining access token: {e}")
+        except ValueError as e:
+            print(f"JSON Parsing Error: {e}")
             return None
     
     @commands.command(name="tiktok")
