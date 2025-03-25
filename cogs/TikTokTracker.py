@@ -1,13 +1,9 @@
 import discord
 from discord.ext import commands
 import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import os
-import time
-import hashlib
-import hmac
-import base64
-import uuid
 
 load_dotenv()
 
@@ -15,10 +11,8 @@ class TikTokTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.tiktok_username = "bunny_desiree"
-        self.client_key = os.getenv("TIKTOK_CLIENT_KEY")
-        self.client_secret = os.getenv("TIKTOK_CLIENT_SECRET")
         
-        # Initialize goals dictionary
+        # Initialize goals dictionary (removing views, keeping only followers and likes)
         self.goals = {
             "Followers": [
                 # Beginner Milestones
@@ -105,176 +99,78 @@ class TikTokTracker(commands.Cog):
                 {"current": 0, "total": 25000000, "description": "Twenty-Five Million Likes"},
                 {"current": 0, "total": 50000000, "description": "Fifty Million Likes"},
                 {"current": 0, "total": 100000000, "description": "Hundred Million Likes"}
-            ],
-            "Views": [
-                # Beginner Views
-                {"current": 0, "total": 10, "description": "First 10 Views"},
-                {"current": 0, "total": 25, "description": "Quarter Hundred Views"},
-                {"current": 0, "total": 50, "description": "Half Hundred Views"},
-                {"current": 0, "total": 75, "description": "Three-Quarter Hundred Views"},
-                {"current": 0, "total": 100, "description": "First Hundred Views"},
-                {"current": 0, "total": 250, "description": "Quarter Thousand Views"},
-                {"current": 0, "total": 500, "description": "Half Thousand Views"},
-                {"current": 0, "total": 750, "description": "Three-Quarter Thousand Views"},
-                {"current": 0, "total": 1000, "description": "First Thousand Views"},
-                
-                # Growing Views
-                {"current": 0, "total": 2500, "description": "Twenty-Five Hundred Views"},
-                {"current": 0, "total": 5000, "description": "Five Thousand Views"},
-                {"current": 0, "total": 7500, "description": "Seven-Half Thousand Views"},
-                {"current": 0, "total": 10000, "description": "Ten Thousand Views"},
-                {"current": 0, "total": 25000, "description": "Twenty-Five Thousand Views"},
-                {"current": 0, "total": 50000, "description": "Fifty Thousand Views"},
-                
-                # Mid-Tier Views
-                {"current": 0, "total": 75000, "description": "Seventy-Five Thousand Views"},
-                {"current": 0, "total": 100000, "description": "Hundred Thousand Views"},
-                {"current": 0, "total": 250000, "description": "Quarter Million Views"},
-                {"current": 0, "total": 500000, "description": "Half Million Views"},
-                {"current": 0, "total": 750000, "description": "Three-Quarter Million Views"},
-                {"current": 0, "total": 1000000, "description": "One Million Views"},
-                
-                # Advanced Views
-                {"current": 0, "total": 2500000, "description": "Two-Half Million Views"},
-                {"current": 0, "total": 5000000, "description": "Five Million Views"},
-                {"current": 0, "total": 10000000, "description": "Ten Million Views"},
-                {"current": 0, "total": 25000000, "description": "Twenty-Five Million Views"},
-                {"current": 0, "total": 50000000, "description": "Fifty Million Views"},
-                {"current": 0, "total": 100000000, "description": "Hundred Million Views"},
-                {"current": 0, "total": 250000000, "description": "Quarter Billion Views"},
-                {"current": 0, "total": 500000000, "description": "Half Billion Views"},
-                {"current": 0, "total": 1000000000, "description": "One Billion Views"}
             ]
         }
-        
-    def generate_auth_params(self):
-        """Generate authorization parameters for TikTok API"""
-        timestamp = str(int(time.time()))
-        nonce = str(uuid.uuid4())
-        
-        # Base parameters
-        params = {
-            'client_key': self.client_key,
-            'timestamp': timestamp,
-            'nonce': nonce
-        }
-        
-        # Sort parameters alphabetically
-        sorted_params = sorted(params.items(), key=lambda x: x[0])
-        
-        # Create signature string
-        signature_string = '&'.join([f"{k}={v}" for k, v in sorted_params])
-        
-        # Create HMAC-SHA256 signature
-        signature = hmac.new(
-            self.client_secret.encode('utf-8'), 
-            signature_string.encode('utf-8'), 
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Add signature to params
-        params['sign'] = signature
-        
-        return params
     
-    def get_access_token(self):
-        """Obtain access token from TikTok OAuth"""
-        token_url = "https://open.tiktokapis.com/v2/oauth/token/"
-        
-        # Prepare token request parameters
-        data = {
-            'client_key': self.client_key,
-            'client_secret': self.client_secret,
-            'grant_type': 'client_credentials'
-        }
-        
+    def fetch_tiktok_stats_web(self):
+        """Fetch TikTok stats using web scraping"""
         try:
-            # Use data= instead of json=
-            response = requests.post(token_url, data=data)
+            # Send a request to TikTok profile
+            url = f"https://www.tiktok.com/@{self.tiktok_username}"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
             
-            if response.status_code == 200:
-                token_data = response.json()
-                return token_data.get('access_token')
-            else:
-                print(f"Token Error: {response.status_code} - {response.text}")
-                return None
-        
-        except requests.exceptions.RequestException as e:
-            print(f"Network Error obtaining access token: {e}")
-            return None
-        except ValueError as e:
-            print(f"JSON Parsing Error: {e}")
-            return None
-    
-    def fetch_tiktok_stats_api(self):
-        """Fetch TikTok stats using the official TikTok Open API"""
-        # First, get access token
-        access_token = self.get_access_token()
-        if not access_token:
-            print("Failed to obtain access token")
-            return None
-        
-        # Endpoint for user info
-        url = "https://open.tiktokapis.com/v2/user/info/"
-        
-        # Generate authentication parameters
-        auth_params = self.generate_auth_params()
-        
-        # Headers
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json'
-        }
-        
-        # Request body
-        body = {
-            "fields": ["follower_count", "likes_count", "video_count"],
-            "username": self.tiktok_username
-        }
-        
-        try:
-            response = requests.post(url, json=body, headers=headers, params=auth_params)
+            response = requests.get(url, headers=headers)
             
             # Check if request was successful
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Extract user statistics
-                user_data = data.get('data', {}).get('user', {})
-                return {
-                    "followers": user_data.get('follower_count', 0),
-                    "likes": user_data.get('likes_count', 0),
-                    "views": user_data.get('video_count', 0)  # Note: this might not be total views
-                }
-            else:
-                print(f"API Error: {response.status_code} - {response.text}")
+            if response.status_code != 200:
+                print(f"Failed to fetch page. Status code: {response.status_code}")
                 return None
+            
+            # Parse the HTML content
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Extract followers and likes
+            # Note: The exact selectors might change, so this is a hypothetical example
+            followers_elem = soup.select_one('strong[title="Followers"]')
+            likes_elem = soup.select_one('strong[title="Likes"]')
+            
+            if not followers_elem or not likes_elem:
+                print("Could not find followers or likes elements")
+                return None
+            
+            # Clean and convert stats
+            followers = self._clean_number(followers_elem.text)
+            likes = self._clean_number(likes_elem.text)
+            
+            return {
+                "followers": followers,
+                "likes": likes
+            }
         
         except requests.exceptions.RequestException as e:
-            print(f"Network Error fetching TikTok stats: {e}")
+            print(f"Network Error: {e}")
             return None
-        except ValueError as e:
-            print(f"JSON Parsing Error: {e}")
+        except Exception as e:
+            print(f"Unexpected error: {e}")
             return None
+    
+    def _clean_number(self, number_str):
+        """Clean and convert number string to integer"""
+        # Remove any non-numeric characters except decimal point
+        cleaned = ''.join(char for char in number_str if char.isdigit() or char == '.')
+        
+        # Convert to float first to handle K, M, B suffixes
+        try:
+            if 'K' in number_str:
+                return int(float(cleaned) * 1000)
+            elif 'M' in number_str:
+                return int(float(cleaned) * 1000000)
+            elif 'B' in number_str:
+                return int(float(cleaned) * 1000000000)
+            return int(float(cleaned))
+        except ValueError:
+            print(f"Could not convert {number_str} to number")
+            return 0
     
     @commands.command(name="tiktok")
     async def tiktok_stats(self, ctx):
-        """Command to display TikTok stats with enhanced error handling"""
+        """Command to display TikTok stats with web scraping"""
         await ctx.trigger_typing()
     
-        # Check API credentials first
-        if not self.client_key or not self.client_secret:
-            await ctx.send("❌ TikTok API credentials are missing!")
-            return
-    
-        # Try to get access token
-        access_token = self.get_access_token()
-        if not access_token:
-            await ctx.send("❌ Failed to obtain TikTok API access token!")
-            return
-    
         # Fetch stats
-        stats = self.fetch_tiktok_stats_api()
+        stats = self.fetch_tiktok_stats_web()
     
         if stats:
             embed = discord.Embed(
@@ -283,18 +179,16 @@ class TikTokTracker(commands.Cog):
             )
             embed.add_field(name="👥 Followers", value=f"{stats['followers']:,}", inline=True)
             embed.add_field(name="❤️ Likes", value=f"{stats['likes']:,}", inline=True)
-            embed.add_field(name="📹 Video Count", value=f"{stats['views']:,}", inline=True)
             await ctx.send(embed=embed)
         else:
-            await ctx.send("❌ Failed to fetch TikTok stats. Check API configuration and credentials.")
+            await ctx.send("❌ Failed to fetch TikTok stats. Check the console for details.")
     
     def create_goals_embed(self, page=0):
         """Creates paginated embed for goals"""
         # Flatten goals into a single list
         goals = (
             self.goals["Followers"] + 
-            self.goals["Likes"] + 
-            self.goals["Views"]
+            self.goals["Likes"]
         )
         
         items_per_page = 10
@@ -354,20 +248,10 @@ class TikTokTracker(commands.Cog):
         
         await ctx.send(embed=embed, view=create_buttons())
 
-    @commands.command(name="test_tiktok_token")
-    async def test_tiktok_token(self, ctx):
-        """Manually test TikTok API token generation"""
-        token = self.get_access_token()
-    
-        if token:
-            await ctx.send(f"Token successfully generated! First 10 chars: {token[:10]}...")
-        else:
-            await ctx.send("Failed to generate token. Check console for details.")
-
     @commands.command(name="update_goals")
     async def update_goals(self, ctx):
         """Update goals based on current TikTok stats"""
-        stats = self.fetch_tiktok_stats_api()
+        stats = self.fetch_tiktok_stats_web()
         
         if stats:
             # Update goals for Followers
@@ -377,10 +261,6 @@ class TikTokTracker(commands.Cog):
             # Update goals for Likes
             for goal in self.goals["Likes"]:
                 goal['current'] = min(stats['likes'], goal['total'])
-            
-            # Update goals for Views
-            for goal in self.goals["Views"]:
-                goal['current'] = min(stats['views'], goal['total'])
             
             await ctx.send("Goals have been updated based on current TikTok stats!")
         else:
