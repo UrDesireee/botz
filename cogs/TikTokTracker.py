@@ -4,62 +4,70 @@ import aiohttp
 from bs4 import BeautifulSoup
 import asyncio
 from typing import List, Dict
-import random
+import re
 
 class TikTokGoal:
-    def __init__(self, description: str, target: int, current: int = 0):
+    def __init__(self, description: str, stat_type: str, milestones: List[int]):
         self.description = description
-        self.target = target
-        self.current = current
-    
-    def progress_percentage(self) -> float:
-        return min((self.current / self.target) * 100, 100)
-    
-    def progress_bar(self, width: int = 10) -> str:
-        filled = int(self.progress_percentage() / 10)
+        self.stat_type = stat_type
+        self.milestones = milestones
+        self.current_milestone_index = 0
+
+    def update_progress(self, current_value: int):
+        # Find the highest milestone reached
+        for i, milestone in enumerate(self.milestones):
+            if current_value >= milestone:
+                self.current_milestone_index = i
+            else:
+                break
+
+    def get_current_milestone(self):
+        return self.milestones[self.current_milestone_index]
+
+    def get_next_milestone(self):
+        return self.milestones[min(self.current_milestone_index + 1, len(self.milestones) - 1)]
+
+    def progress_percentage(self, current_value: int) -> float:
+        if self.current_milestone_index >= len(self.milestones) - 1:
+            return 100.0
+        
+        current_milestone = self.get_current_milestone()
+        next_milestone = self.get_next_milestone()
+        
+        # Calculate progress between current milestones
+        progress = (current_value - current_milestone) / (next_milestone - current_milestone) * 100
+        return min(max(progress, 0), 100)
+
+    def progress_bar(self, current_value: int, width: int = 10) -> str:
+        percentage = self.progress_percentage(current_value)
+        filled = int(percentage / 10)
         bar = '█' * filled + '░' * (width - filled)
-        return f"{bar} {self.progress_percentage():.1f}%"
+        return f"{bar} {percentage:.1f}%"
 
 class TikTokTracker(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.username = "bunny_desiree"
         self.goals = self._generate_goals()
+        self.last_stats = None
 
     def _generate_goals(self) -> List[TikTokGoal]:
-        goals = []
-        
-        # Followers goals
-        followers_milestones = [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
-        for milestone in followers_milestones:
-            goals.append(TikTokGoal(
-                f"Reach {milestone:,} followers", 
-                milestone, 
-                random.randint(int(milestone * 0.5), milestone - 1)
-            ))
-        
-        # Likes goals
-        likes_milestones = [10000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000]
-        for milestone in likes_milestones:
-            goals.append(TikTokGoal(
-                f"Accumulate {milestone:,} total likes", 
-                milestone, 
-                random.randint(int(milestone * 0.5), milestone - 1)
-            ))
-        
-        # Engagement goals
-        engagement_goals = [
-            TikTokGoal("Average 1% engagement rate", 100000, random.randint(50000, 90000)),
-            TikTokGoal("Get 10 viral videos", 10, random.randint(3, 9)),
-            TikTokGoal("Maintain 50% follower growth rate", 50, random.randint(20, 45))
+        return [
+            TikTokGoal(
+                "Followers Milestones", 
+                "followers", 
+                [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
+            ),
+            TikTokGoal(
+                "Likes Milestones", 
+                "likes", 
+                [10000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000]
+            )
         ]
-        goals.extend(engagement_goals)
-        
-        return goals
 
     async def fetch_tiktok_stats(self):
         """
-        Fetch TikTok stats using web scraping
+        Fetch TikTok followers and likes using web scraping
         """
         url = f"https://www.tiktok.com/@{self.username}"
         
@@ -70,35 +78,37 @@ class TikTokTracker(commands.Cog):
                 }) as response:
                     if response.status != 200:
                         return {
-                            "followers": "N/A",
-                            "following": "N/A",
-                            "likes": "N/A",
-                            "video_count": "N/A"
+                            "followers": 0,
+                            "likes": 0
                         }
                     
                     html = await response.text()
-                    soup = BeautifulSoup(html, 'html.parser')
                     
-                    # Note: These selectors are hypothetical and would need to be updated 
-                    # based on actual TikTok HTML structure
-                    followers = soup.select_one('strong[title="Followers"]')
-                    likes = soup.select_one('strong[title="Likes"]')
-                    video_count = soup.select_one('strong[title="Videos"]')
+                    # Extract followers
+                    followers_match = re.search(r'(\d+(?:,\d+)*)\s*Followers', html)
+                    followers = int(followers_match.group(1).replace(',', '')) if followers_match else 0
                     
-                    return {
-                        "followers": followers.text.strip() if followers else "N/A",
-                        "following": "N/A",
-                        "likes": likes.text.strip() if likes else "N/A",
-                        "video_count": video_count.text.strip() if video_count else "N/A"
+                    # Extract likes
+                    likes_match = re.search(r'(\d+(?:,\d+)*)\s*Likes', html)
+                    likes = int(likes_match.group(1).replace(',', '')) if likes_match else 0
+                    
+                    # Update goals
+                    for goal in self.goals:
+                        if goal.stat_type == "followers":
+                            goal.update_progress(followers)
+                        elif goal.stat_type == "likes":
+                            goal.update_progress(likes)
+                    
+                    # Cache stats
+                    self.last_stats = {
+                        "followers": followers,
+                        "likes": likes
                     }
+                    
+                    return self.last_stats
         except Exception as e:
             print(f"Error fetching TikTok stats: {e}")
-            return {
-                "followers": "Error",
-                "following": "Error",
-                "likes": "Error",
-                "video_count": "Error"
-            }
+            return self.last_stats or {"followers": 0, "likes": 0}
 
     @commands.command()
     async def tiktok(self, ctx):
@@ -112,20 +122,21 @@ class TikTokTracker(commands.Cog):
         )
         
         # Add stats fields
-        embed.add_field(name="📊 Followers", value=f"{stats['followers']}", inline=True)
-        embed.add_field(name="❤️ Total Likes", value=f"{stats['likes']}", inline=True)
-        embed.add_field(name="📹 Video Count", value=f"{stats['video_count']}", inline=True)
+        embed.add_field(name="📊 Followers", value=f"{stats['followers']:,}", inline=True)
+        embed.add_field(name="❤️ Total Likes", value=f"{stats['likes']:,}", inline=True)
         
         # Find and display suggested goal
         suggested_goal = max(
-            [goal for goal in self.goals if goal.progress_percentage() < 100], 
-            key=lambda x: x.target
+            self.goals, 
+            key=lambda x: x.get_next_milestone()
         )
         
         # Add suggested goal progress
         embed.add_field(
             name="🎯 Suggested Goal", 
-            value=f"**{suggested_goal.description}**\n{suggested_goal.progress_bar()}",
+            value=f"**{suggested_goal.description}**\n"
+                  f"Next target: {suggested_goal.get_next_milestone():,} {suggested_goal.stat_type}\n"
+                  f"{suggested_goal.progress_bar(stats[suggested_goal.stat_type])}",
             inline=False
         )
         
@@ -133,46 +144,56 @@ class TikTokTracker(commands.Cog):
 
     @commands.command()
     async def goals(self, ctx):
-        # Pagination setup
-        items_per_page = 10
-        total_pages = (len(self.goals) + items_per_page - 1) // items_per_page
-        current_page = 0
-
-        # Create initial embed
-        def create_embed(page):
-            start = page * items_per_page
-            end = start + items_per_page
-            page_goals = self.goals[start:end]
-
-            embed = discord.Embed(
-                title="🌈 TikTok Goals Dashboard 🌈", 
-                color=discord.Color.from_rgb(186, 85, 211)  # Medium Orchid
-            )
-            
-            for goal in page_goals:
-                embed.add_field(
-                    name=goal.description, 
-                    value=f"Progress: {goal.progress_bar()}",
-                    inline=False
-                )
-            
-            return embed
-
+        # Ensure we have the latest stats
+        await self.fetch_tiktok_stats()
+        
         # Create view with buttons
         class GoalsView(discord.ui.View):
-            def __init__(self, ctx, total_pages):
+            def __init__(self, cog, ctx):
                 super().__init__()
+                self.cog = cog
                 self.ctx = ctx
                 self.current_page = 0
-                self.total_pages = total_pages
+
+            def create_embed(self):
+                goal = self.cog.goals[self.current_page]
+                stats = self.cog.last_stats or {"followers": 0, "likes": 0}
+                current_value = stats[goal.stat_type]
+
+                embed = discord.Embed(
+                    title=f"🌈 {goal.description} 🌈", 
+                    color=discord.Color.from_rgb(186, 85, 211)  # Medium Orchid
+                )
+                
+                # Current progress
+                embed.add_field(
+                    name=f"Current {goal.stat_type.capitalize()}",
+                    value=f"{current_value:,}",
+                    inline=False
+                )
+                
+                # Milestone tracking
+                embed.add_field(
+                    name="Milestone Progress",
+                    value=goal.progress_bar(current_value),
+                    inline=False
+                )
+                
+                # Next milestone details
+                next_milestone = goal.get_next_milestone()
+                remaining = max(0, next_milestone - current_value)
+                embed.add_field(
+                    name="Next Milestone",
+                    value=f"{next_milestone:,} {goal.stat_type} (Remaining: {remaining:,})",
+                    inline=False
+                )
+                
+                return embed
 
             @discord.ui.button(label="◀️ Previous", style=discord.ButtonStyle.secondary)
             async def previous_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-                if self.current_page > 0:
-                    self.current_page -= 1
-                    embed = create_embed(self.current_page)
-                    self.update_buttons()
-                    await interaction.response.edit_message(embed=embed, view=self)
+                self.current_page = (self.current_page - 1) % len(self.cog.goals)
+                await interaction.response.edit_message(embed=self.create_embed(), view=self)
 
             @discord.ui.button(label="Page", style=discord.ButtonStyle.primary, disabled=True)
             async def page_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -181,27 +202,18 @@ class TikTokTracker(commands.Cog):
 
             @discord.ui.button(label="Next ▶️", style=discord.ButtonStyle.secondary)
             async def next_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-                if self.current_page < self.total_pages - 1:
-                    self.current_page += 1
-                    embed = create_embed(self.current_page)
-                    self.update_buttons()
-                    await interaction.response.edit_message(embed=embed, view=self)
+                self.current_page = (self.current_page + 1) % len(self.cog.goals)
+                await interaction.response.edit_message(embed=self.create_embed(), view=self)
 
             def update_buttons(self):
                 # Update page button
-                self.children[1].label = f"Page {self.current_page + 1}/{self.total_pages}"
-                
-                # Disable/enable previous button
-                self.children[0].disabled = (self.current_page == 0)
-                
-                # Disable/enable next button
-                self.children[2].disabled = (self.current_page == self.total_pages - 1)
+                self.children[1].label = f"Page {self.current_page + 1}/{len(self.cog.goals)}"
 
         # Create and send the view
-        view = GoalsView(ctx, total_pages)
+        view = GoalsView(self, ctx)
         view.update_buttons()
         
-        initial_embed = create_embed(0)
+        initial_embed = view.create_embed()
         await ctx.send(embed=initial_embed, view=view)
 
 async def setup(bot):
