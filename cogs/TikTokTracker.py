@@ -67,15 +67,24 @@ class TikTokGoal:
         progress = (current_value / final_milestone) * 100
         return min(max(progress, 0), 100)
 
-    def progress_bar(self, current_value: int, width: int = 10, use_overall: bool = False) -> str:
+    def direct_progress_percentage(self, current_value: int, target_milestone: int) -> float:
+        """Calculate the direct percentage towards a specific milestone"""
+        if current_value >= target_milestone:
+            return 100.0
+        
+        return (current_value / target_milestone) * 100
+
+    def progress_bar(self, current_value: int, width: int = 10, use_overall: bool = False, use_direct: bool = False, target_milestone: int = None) -> str:
         if use_overall:
             percentage = self.overall_progress_percentage(current_value)
+        elif use_direct and target_milestone:
+            percentage = self.direct_progress_percentage(current_value, target_milestone)
         else:
             percentage = self.progress_percentage(current_value)
             
         filled = int(percentage / 100 * width)
         bar = '█' * filled + '░' * (width - filled)
-        return f"{bar} {percentage:.1f}%"
+        return f"{bar} {percentage:.3f}%"
 
     def is_completed(self):
         return self.current_milestone_index >= len(self.milestones) - 1
@@ -201,17 +210,11 @@ class TikTokTracker(commands.Cog):
         next_milestone = suggested_goal.get_next_milestone()
         current_value = stats[suggested_goal.stat_type]
         
-        # Calculate direct progress to the next milestone
-        if next_milestone and current_value < next_milestone:
-            progress_percent = (current_value / next_milestone) * 100
-        else:
-            progress_percent = 100.0
-            
         embed.add_field(
             name="🎯 Suggested Goal", 
             value=f"{suggested_goal.description}\n"
                   f"Next target: {next_milestone:,} {suggested_goal.stat_type}\n"
-                  f"{suggested_goal.progress_bar(current_value, use_overall=False)}",
+                  f"{suggested_goal.progress_bar(current_value, use_direct=True, target_milestone=next_milestone)}",
             inline=False
         )
         
