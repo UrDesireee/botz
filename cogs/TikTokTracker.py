@@ -45,7 +45,7 @@ class TikTokGoal:
             next_milestone = self.milestones[0]
             return min(current_value / next_milestone * 100, 100)
         
-        # Calculate progress between current milestones
+        # Calculate progress between current and next milestone
         current_milestone = self.get_current_milestone()
         next_milestone = self.get_next_milestone()
         
@@ -55,9 +55,25 @@ class TikTokGoal:
         progress = (current_value - current_milestone) / (next_milestone - current_milestone) * 100
         return min(max(progress, 0), 100)
 
-    def progress_bar(self, current_value: int, width: int = 10) -> str:
-        percentage = self.progress_percentage(current_value)
-        filled = int(percentage / 10)
+    def overall_progress_percentage(self, current_value: int) -> float:
+        # Calculate progress towards the final milestone
+        final_milestone = self.milestones[-1]
+        
+        # If all milestones are completed or exceeded
+        if current_value >= final_milestone:
+            return 100.0
+        
+        # Calculate direct percentage of the final goal
+        progress = (current_value / final_milestone) * 100
+        return min(max(progress, 0), 100)
+
+    def progress_bar(self, current_value: int, width: int = 10, use_overall: bool = False) -> str:
+        if use_overall:
+            percentage = self.overall_progress_percentage(current_value)
+        else:
+            percentage = self.progress_percentage(current_value)
+            
+        filled = int(percentage / 100 * width)
         bar = '█' * filled + '░' * (width - filled)
         return f"{bar} {percentage:.1f}%"
 
@@ -185,11 +201,17 @@ class TikTokTracker(commands.Cog):
         next_milestone = suggested_goal.get_next_milestone()
         current_value = stats[suggested_goal.stat_type]
         
+        # Calculate direct progress to the next milestone
+        if next_milestone and current_value < next_milestone:
+            progress_percent = (current_value / next_milestone) * 100
+        else:
+            progress_percent = 100.0
+            
         embed.add_field(
             name="🎯 Suggested Goal", 
-            value=f"**{suggested_goal.description}**\n"
+            value=f"{suggested_goal.description}\n"
                   f"Next target: {next_milestone:,} {suggested_goal.stat_type}\n"
-                  f"{suggested_goal.progress_bar(current_value)}",
+                  f"{suggested_goal.progress_bar(current_value, use_overall=False)}",
             inline=False
         )
         
@@ -244,10 +266,10 @@ class TikTokTracker(commands.Cog):
                     inline=False
                 )
                 
-                # Current progress bar
+                # Overall progress bar (percentage towards final milestone)
                 embed.add_field(
                     name="Overall Progress",
-                    value=goal.progress_bar(current_value),
+                    value=goal.progress_bar(current_value, use_overall=True),
                     inline=False
                 )
                 
